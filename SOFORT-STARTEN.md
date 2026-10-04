@@ -39,3 +39,25 @@ Unter Repository → Settings → Secrets and variables → Actions:
 - Privates Repository-Secret: `FIREBASE_SERVICE_ACCOUNT` mit dem JSON eines für Hosting berechtigten Dienstkontos des gewünschten Firebase-Projekts. Ausschließlich direkt in GitHub eintragen; niemals in Quellcode oder Chat einfügen.
 
 Danach unter Actions den Workflow **„Auf Firebase veroeffentlichen“** starten und die Firebase-Projekt-ID angeben. Der Workflow läuft nur bei manuellem Start. Ohne Secret wird er vor dem Deployment beendet. Der Workflow **„App pruefen“** überprüft automatisch Tests und Build.
+
+## Kostenlose Adresse ohne Nutzername
+
+Die zusätzliche Hosting-Konfiguration `firebase.clean.json` verwendet die Site-ID `heimfriseur-app`. In derselben bereits angemeldeten Cloud Shell:
+
+```bash
+cd ~/heimfriseur
+git pull --ff-only && bash scripts/setup-clean-url.sh
+```
+
+Das Skript legt die Site im vorhandenen Projekt an und veröffentlicht den Build dort. Firebase prüft, ob der Name global frei ist. Wenn das Anlegen scheitert, stoppt das Skript vor dem Deployment. Die neue Adresse ist erst nach erfolgreichem Deployment gültig. Falls der Name vergeben ist, zuerst einen anderen Namen in der Konfiguration und im Skript festlegen.
+
+Nach Erfolg in Supabase die Site URL auf `https://heimfriseur-app.web.app` setzen und zusätzlich `https://heimfriseur-app.web.app/**` zu den erlaubten Redirect URLs hinzufügen. Alte Redirect URLs können erhalten bleiben. Das vorhandene Projekt und die Datenbank werden weiterverwendet; an der neuen Adresse erneut anmelden und die PWA dort installieren.
+
+Für spätere Aktualisierungen die Site nicht erneut anlegen:
+
+```bash
+cd ~/heimfriseur
+git pull --ff-only
+npm run build
+npx --yes firebase-tools deploy --only hosting --config firebase.clean.json --project heimfriseur-dayplayer100
+```
