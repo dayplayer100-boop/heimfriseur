@@ -1,0 +1,140 @@
+export interface Base {
+  id: string;
+  user_id: string;
+  created_at?: string;
+  updated_at?: string;
+}
+export interface Profile extends Base {
+  business_name: string;
+  first_name: string;
+  last_name: string;
+  street: string;
+  house_number: string;
+  postal_code: string;
+  city: string;
+  phone: string;
+  email: string;
+  logo_url: string;
+}
+export interface Facility extends Base {
+  name: string;
+  street: string;
+  house_number: string;
+  postal_code: string;
+  city: string;
+  phone: string;
+  email: string;
+  contact_name: string;
+  contact_phone: string;
+  notes: string;
+}
+export interface Group extends Base {
+  facility_id: string;
+  name: string;
+  recurrence_weeks: number;
+  preferred_weekday: number;
+  preferred_start_time: string;
+  notes: string;
+}
+export interface Customer extends Base {
+  facility_id: string;
+  group_id: string;
+  first_name: string;
+  last_name: string;
+  room_number: string;
+  status: string;
+  notes: string;
+  default_duration_minutes?: number;
+}
+export interface Service extends Base {
+  name: string;
+  price: number;
+  duration_minutes: number;
+  is_active: boolean;
+}
+export interface DefaultService extends Base {
+  customer_id: string;
+  service_id: string;
+}
+export interface Appointment extends Base {
+  facility_id: string;
+  group_id: string;
+  appointment_date: string;
+  start_time: string;
+  status: string;
+  recurrence_weeks: number | null;
+  recurrence_series_id: string | null;
+  notes?: string;
+  actual_start_time: string | null;
+  actual_end_time: string | null;
+}
+export interface Member extends Base {
+  appointment_id: string;
+  customer_id: string;
+  status: string;
+  non_completion_reason?: string;
+  sort_order: number;
+}
+export interface Treatment extends Base {
+  appointment_id: string;
+  appointment_customer_id: string;
+  customer_id: string;
+  start_time: string;
+  end_time: string | null;
+  duration_minutes: number | null;
+  total_price: number;
+  material_cost: number;
+  price_override?: number | null;
+  notes: string;
+}
+export interface TreatmentService extends Base {
+  treatment_id: string;
+  service_id: string;
+  service_name_snapshot: string;
+  price_snapshot: number;
+  duration_minutes_snapshot: number;
+}
+export interface Formula extends Base {
+  customer_id: string;
+  treatment_id?: string | null;
+  product: string;
+  color_1: string;
+  color_1_amount: number | null;
+  color_2: string;
+  color_2_amount: number | null;
+  color_3: string;
+  color_3_amount: number | null;
+  developer_strength: string;
+  developer_amount: number | null;
+  processing_time_minutes: number | null;
+  notes: string;
+  formula_date: string;
+}
+export interface Data {
+  profiles: Profile[];
+  facilities: Facility[];
+  groups: Group[];
+  customers: Customer[];
+  services: Service[];
+  customer_default_services: DefaultService[];
+  appointments: Appointment[];
+  appointment_customers: Member[];
+  treatments: Treatment[];
+  treatment_services: TreatmentService[];
+  color_formulas: Formula[];
+}
+export type Table = keyof Data;
+export type Row = Data[Table][number];
+export const emptyData = (): Data => ({
+  profiles: [],
+  facilities: [],
+  groups: [],
+  customers: [],
+  services: [],
+  customer_default_services: [],
+  appointments: [],
+  appointment_customers: [],
+  treatments: [],
+  treatment_services: [],
+  color_formulas: [],
+});

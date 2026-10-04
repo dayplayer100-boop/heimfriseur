@@ -1,0 +1,42 @@
+name: Auf Firebase veroeffentlichen
+on:
+  workflow_dispatch:
+    inputs:
+      project_id:
+        description: 'Firebase-Projekt-ID'
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: firebase-live
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Firebase-Zugang pruefen
+        env:
+          FIREBASE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          if [ -z "$FIREBASE_ACCOUNT" ]; then
+            echo 'Bitte zuerst das Repository-Secret FIREBASE_SERVICE_ACCOUNT in GitHub einrichten.'
+            exit 1
+          fi
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+        env:
+          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
+      - uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          repoToken: ${{ secrets.GITHUB_TOKEN }}
+          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          projectId: ${{ inputs.project_id }}
+          channelId: live
