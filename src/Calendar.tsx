@@ -10,7 +10,7 @@ export function Calendar({
   navigate: (p: string) => void;
   plan: () => void;
 }) {
-  const { data } = useStore();
+  const { data, isOwner } = useStore();
   const [view, setView] = useState("Liste"),
     [anchor, setAnchor] = useState(today());
   const date = new Date(anchor + "T12:00:00Z");
@@ -60,10 +60,12 @@ export function Calendar({
         title="Kalender"
         description="Regelmäßige Besuche. Ein klarer Überblick."
         action={
-          <Button onClick={plan}>
-            <CalendarDays size={18} />
-            Besuch planen
-          </Button>
+          isOwner && (
+            <Button onClick={plan}>
+              <CalendarDays size={18} />
+              Besuch planen
+            </Button>
+          )
         }
       />
       <div className="calendar-toolbar">
@@ -150,7 +152,11 @@ export function Calendar({
           {!visits.length && (
             <Empty
               title="Keine Besuche in diesem Zeitraum"
-              action={<Button onClick={plan}>Besuch planen</Button>}
+              action={
+                isOwner ? (
+                  <Button onClick={plan}>Besuch planen</Button>
+                ) : undefined
+              }
             />
           )}
         </div>

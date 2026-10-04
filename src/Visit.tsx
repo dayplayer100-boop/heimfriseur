@@ -1,3 +1,5 @@
+import { useAutosave } from "./useAutosave";
+import { AssignmentEditor, CorrectionEditor } from "./Team";
 import { useEffect, useState } from "react";
 import {
   ArrowLeft,
@@ -11,7 +13,7 @@ import {
   MoreHorizontal,
   SkipForward,
 } from "lucide-react";
-import { useStore } from "./store";
+import { useStore, friendly } from "./store";
 import {
   Title,
   Button,
@@ -44,7 +46,7 @@ export function Visit({
   navigate: (p: string) => void;
   edit: Edit;
 }) {
-  const { data, rpc, run, setNotify } = useStore();
+  const { data, rpc, run, setNotify, isOwner, team, actorId } = useStore();
   const [dialog, setDialog] = useState(""),
     [member, setMember] = useState(""),
     [reason, setReason] = useState("Nicht anwesend");
@@ -59,6 +61,12 @@ export function Visit({
       ranking.indexOf(a.status) - ranking.indexOf(b.status) ||
       a.sort_order - b.sort_order,
   );
+  const canClose =
+    isOwner ||
+    team?.assignments.some(
+      (x) =>
+        x.appointment_id === id && x.user_id === actorId && x.is_responsible,
+    );
   const editable = !["Abgeschlossen", "Abgesagt"].includes(a.status);
   return (
     <>
@@ -73,16 +81,39 @@ export function Visit({
         action={
           <div className="button-group">
             <Status status={a.status} />
-            <button
-              aria-label="Besuchsaktionen"
-              className="icon-button"
-              onClick={() => setDialog("actions")}
-            >
-              <MoreHorizontal />
-            </button>
+            {isOwner && (
+              <button
+                aria-label="Besuchsaktionen"
+                className="icon-button"
+                onClick={() => setDialog("actions")}
+              >
+                <MoreHorizontal />
+              </button>
+            )}
           </div>
         }
       />
+      <section className="panel assignment-summary">
+        <div>
+          <strong>Team</strong>
+          <p>
+            {team?.assignments
+              .filter((x) => x.appointment_id === id)
+              .map(
+                (x) =>
+                  (team.members.find((m) => m.user_id === x.user_id)
+                    ?.display_name || "Geschäftsführer") +
+                  (x.is_responsible ? " (verantwortlich)" : ""),
+              )
+              .join(" · ") || "Noch nicht zugewiesen"}
+          </p>
+        </div>
+        {isOwner && editable && (
+          <Button variant="secondary" onClick={() => setDialog("assign")}>
+            Team zuweisen
+          </Button>
+        )}
+      </section>
       <section className="visit-overview">
         <div>
           <span className="eyebrow">FORTSCHRITT</span>
@@ -101,14 +132,18 @@ export function Visit({
             {s.open} offen
           </small>
         </div>
-        <div>
-          <small>Aktueller Umsatz</small>
-          <strong>{euro(s.revenue)}</strong>
-        </div>
-        <div>
-          <small>Geplanter Umsatz</small>
-          <strong>{euro(s.planned)}</strong>
-        </div>
+        {isOwner && (
+          <>
+            <div>
+              <small>Aktueller Umsatz</small>
+              <strong>{euro(s.revenue)}</strong>
+            </div>
+            <div>
+              <small>Geplanter Umsatz</small>
+              <strong>{euro(s.planned)}</strong>
+            </div>
+          </>
+        )}
         <div>
           <small>Geschätzte Restzeit</small>
           <strong>{minutes(s.remaining)}</strong>
@@ -171,12 +206,23 @@ export function Visit({
                           defaults.reduce((n, s) => n + s.duration_minutes, 0),
                         )}
                   </span>
-                  <strong>
-                    {euro(
-                      t?.total_price ??
-                        defaults.reduce((n, s) => n + Number(s.price), 0),
-                    )}
-                  </strong>
+                  {(isOwner ||
+                    !t ||
+                    (t.performed_by || t.user_id) === actorId) && (
+                    <strong>
+                      {euro(
+                        t?.total_price ??
+                          defaults.reduce((n, s) => n + Number(s.price), 0),
+                      )}
+                    </strong>
+                  )}
+                  {t && (
+                    <span>
+                      {team?.members.find(
+                        (x) => x.user_id === (t.performed_by || t.user_id),
+                      )?.display_name || "Geschäftsführer"}
+                    </span>
+                  )}
                   {m.non_completion_reason && (
                     <span>{m.non_completion_reason}</span>
                   )}
@@ -209,9 +255,30 @@ export function Visit({
                     </button>
                   </div>
                 )}
-                {m.status === "In Behandlung" && t && (
-                  <Button onClick={() => navigate("treatment/" + t.id)}>
-                    Fortsetzen
+                {m.status === "In Behandlung" &&
+                  t &&
+                  (t.performed_by || t.user_id) === actorId && (
+                    <Button onClick={() => navigate("treatment/" + t.id)}>
+                      Fortsetzen
+                    </Button>
+                  )}
+                {m.status === "In Behandlung" &&
+                  t &&
+                  (t.performed_by || t.user_id) !== actorId &&
+                  isOwner && (
+                    <Button
+                      variant="secondary"
+                      onClick={() => setDialog("takeover/" + t.id)}
+                    >
+                      Behandlung übernehmen
+                    </Button>
+                  )}
+                {m.status === "Erledigt" && t && isOwner && (
+                  <Button
+                    variant="secondary"
+                    onClick={() => setDialog("correct/" + t.id)}
+                  >
+                    Korrigieren
                   </Button>
                 )}
               </div>
@@ -233,7 +300,7 @@ export function Visit({
         )}
       </div>
       <div className="visit-bottom">
-        {a.status === "Abgeschlossen" ? (
+        {a.status === "Abgeschlossen" && isOwner ? (
           <>
             <Button
               onClick={() =>
@@ -257,13 +324,46 @@ export function Visit({
               Drucken
             </Button>
           </>
-        ) : editable ? (
+        ) : editable && canClose ? (
           <Button onClick={() => setDialog("close")}>
             <CheckCircle2 size={18} />
             Besuch abschließen
           </Button>
         ) : null}
       </div>
+      {dialog === "assign" && isOwner && (
+        <AssignmentEditor appointmentId={id} onClose={() => setDialog("")} />
+      )}
+      {dialog.startsWith("correct/") && isOwner && (
+        <CorrectionEditor
+          treatmentId={dialog.split("/")[1]}
+          onClose={() => setDialog("")}
+        />
+      )}
+      {dialog.startsWith("takeover/") && isOwner && (
+        <Modal
+          title="Offene Behandlung übernehmen?"
+          onClose={() => setDialog("")}
+        >
+          <p>
+            Der bisherige Mitarbeiter kann diese Behandlung anschließend nicht
+            weiter bearbeiten. Die Übernahme wird protokolliert. Prüfe vorher,
+            ob die Behandlung noch läuft.
+          </p>
+          <Button
+            onClick={async () => {
+              const tid = dialog.split("/")[1];
+              const ok = await run(async () => {
+                await rpc("take_over_treatment", { p_treatment: tid });
+                return true;
+              });
+              if (ok) navigate("treatment/" + tid);
+            }}
+          >
+            Übernehmen
+          </Button>
+        </Modal>
+      )}
       {dialog === "skip" && (
         <Modal title="Nicht durchgeführt" onClose={() => setDialog("")}>
           <p>Warum kann die Behandlung heute nicht stattfinden?</p>
@@ -334,19 +434,21 @@ export function Visit({
                 </button>
               ))}
           </div>
-          <Button
-            onClick={() => {
-              setDialog("");
-              edit("customers", undefined, {
-                facility_id: a.facility_id,
-                group_id: a.group_id,
-                appointment_id: id,
-              });
-            }}
-          >
-            <Plus size={18} />
-            Neuen Kunden anlegen
-          </Button>
+          {isOwner && (
+            <Button
+              onClick={() => {
+                setDialog("");
+                edit("customers", undefined, {
+                  facility_id: a.facility_id,
+                  group_id: a.group_id,
+                  appointment_id: id,
+                });
+              }}
+            >
+              <Plus size={18} />
+              Neuen Kunden anlegen
+            </Button>
+          )}
         </Modal>
       )}
       {dialog === "close" && (
@@ -380,14 +482,18 @@ export function Visit({
             <dd>{minutes(s.work)}</dd>
             <dt>Behandlungszeit</dt>
             <dd>{minutes(s.treatment)}</dd>
-            <dt>Umsatz</dt>
-            <dd>{euro(s.revenue)}</dd>
-            <dt>Materialkosten</dt>
-            <dd>{euro(s.material)}</dd>
-            <dt>Umsatz nach Material</dt>
-            <dd>
-              <strong>{euro(s.revenue - s.material)}</strong>
-            </dd>
+            {isOwner && (
+              <>
+                <dt>Umsatz</dt>
+                <dd>{euro(s.revenue)}</dd>
+                <dt>Materialkosten</dt>
+                <dd>{euro(s.material)}</dd>
+                <dt>Umsatz nach Material</dt>
+                <dd>
+                  <strong>{euro(s.revenue - s.material)}</strong>
+                </dd>
+              </>
+            )}
           </dl>
           {s.open > 0 ? (
             <p className="warning">
@@ -533,7 +639,16 @@ export function TreatmentView({
   id: string;
   navigate: (p: string) => void;
 }) {
-  const { data, rpc, run, setNotify, setError } = useStore();
+  const {
+    data,
+    rpc,
+    refresh,
+    setNotify,
+    setError,
+    isOwner,
+    actorId,
+    setNavigationGuard,
+  } = useStore();
   const t = data.treatments.find((t) => t.id === id)!;
   const snapshots = data.treatment_services.filter(
     (s) => s.treatment_id === id,
@@ -554,24 +669,64 @@ export function TreatmentView({
         : null;
     }),
     [tick, setTick] = useState(Date.now()),
-    [dirty, setDirty] = useState(false);
+    [finishing, setFinishing] = useState(false);
+  const ownsTreatment = !!t && (t.performed_by || t.user_id) === actorId;
+  const hasColor = selected.some((sid) =>
+    /farbe/i.test(data.services.find((s) => s.id === sid)?.name || ""),
+  );
+  const draft = {
+    selected,
+    price,
+    material,
+    notes,
+    formula: hasColor ? formula : null,
+  };
+  const autosave = useAutosave(
+    draft,
+    ownsTreatment && !t?.end_time,
+    async (next, finish) => {
+      const m = Number(next.material.replace(",", ".")),
+        p =
+          next.price === "" || !isOwner
+            ? null
+            : Number(next.price.replace(",", "."));
+      if (
+        !Number.isFinite(m) ||
+        m < 0 ||
+        (p !== null && (!Number.isFinite(p) || p < 0))
+      )
+        throw Error("Bitte gültige, nicht negative Beträge eingeben.");
+      try {
+        await rpc("save_treatment", {
+          p_treatment: id,
+          p_services: next.selected,
+          p_price: p,
+          p_material: m,
+          p_notes: next.notes,
+          p_formula: next.formula,
+          p_finish: finish,
+        });
+      } catch (e) {
+        throw Error(friendly(e) + " Änderungen sind noch nicht gespeichert.");
+      }
+    },
+  );
+  const dirty = autosave.dirty;
+  useEffect(() => {
+    setNavigationGuard(async () => autosave.flush());
+    return () => setNavigationGuard(null);
+  }, [id, autosave.flush]);
   useEffect(() => {
     const timer = setInterval(() => setTick(Date.now()), 1000);
     return () => clearInterval(timer);
   }, []);
-  useEffect(() => {
-    const handler = (e: BeforeUnloadEvent) => {
-      if (dirty) {
-        e.preventDefault();
-        e.returnValue = "";
-      }
-    };
-    window.addEventListener("beforeunload", handler);
-    return () => window.removeEventListener("beforeunload", handler);
-  }, [dirty]);
   if (!t) return <Empty title="Behandlung nicht gefunden" />;
   const c = data.customers.find((c) => c.id === t.customer_id)!;
   const a = data.appointments.find((a) => a.id === t.appointment_id)!;
+  if (!c || !a)
+    return (
+      <Empty title="Behandlung gehört nicht zu einem zugewiesenen Besuch" />
+    );
   const services = data.services.filter(
     (s) => s.is_active || selected.includes(s.id),
   );
@@ -611,39 +766,36 @@ export function TreatmentView({
       ),
     )[0];
   async function save(finish: boolean) {
-    const m = Number(material.replace(",", ".")),
-      p = price === "" ? null : Number(price.replace(",", "."));
-    if (
-      !Number.isFinite(m) ||
-      m < 0 ||
-      (p !== null && (!Number.isFinite(p) || p < 0))
-    ) {
-      setError("Bitte gültige, nicht negative Beträge eingeben.");
-      return false;
-    }
-    const ok = await run(async () => {
-      await rpc("save_treatment", {
-        p_treatment: id,
-        p_services: selected,
-        p_price: p,
-        p_material: m,
-        p_notes: notes,
-        p_formula: color ? formula : null,
-        p_finish: finish,
-      });
-      return true;
-    });
+    if (finishing) return false;
+    if (finish) setFinishing(true);
+    const ok = await autosave.flush(finish);
     if (ok) {
-      setDirty(false);
+      await refresh();
       if (finish) {
         setNotify(
-          `${fullName(c)} abgeschlossen · ${euro(p ?? total)} · ${minutes(elapsed / 60)}`,
+          `${fullName(c)} abgeschlossen · ${euro(price === "" ? total : Number(price.replace(",", ".")))} · ${minutes(elapsed / 60)}`,
         );
         navigate("visit/" + a.id);
       } else setNotify("Zwischenstand gespeichert");
-    }
-    return Boolean(ok);
+    } else
+      setError(
+        autosave.error ||
+          "Änderungen konnten nicht gespeichert werden. Bitte erneut versuchen.",
+      );
+    if (finish) setFinishing(false);
+    return ok;
   }
+  if (!ownsTreatment && !t.end_time)
+    return (
+      <Empty
+        title="Diese Behandlung wird von einer anderen Person bearbeitet"
+        action={
+          <Button onClick={() => navigate("visit/" + a.id)}>
+            Zur Kundenliste
+          </Button>
+        }
+      />
+    );
   if (t.end_time)
     return (
       <>
@@ -673,7 +825,10 @@ export function TreatmentView({
         title={fullName(c)}
         description={`Zimmer ${c.room_number || "–"} · ${data.facilities.find((f) => f.id === a.facility_id)?.name}`}
       />
-      <div className="treatment-layout">
+      <fieldset
+        disabled={finishing}
+        className="treatment-layout treatment-fields"
+      >
         <div>
           <section className="timer-panel">
             <span>
@@ -714,7 +869,6 @@ export function TreatmentView({
                         ? [...selected, s.id]
                         : selected.filter((id) => id !== s.id),
                     );
-                    setDirty(true);
                   }}
                 />
                 <span>
@@ -748,7 +902,6 @@ export function TreatmentView({
                         ["notes", lastFormula.notes],
                       ]),
                     );
-                    setDirty(true);
                   }}
                 >
                   Letzte Farbrezeptur übernehmen
@@ -759,7 +912,6 @@ export function TreatmentView({
                   value={formula}
                   onChange={(v) => {
                     setFormula(v);
-                    setDirty(true);
                   }}
                 />
               ) : (
@@ -767,7 +919,6 @@ export function TreatmentView({
                   variant="secondary"
                   onClick={() => {
                     setFormula({});
-                    setDirty(true);
                   }}
                 >
                   Rezeptur hinzufügen
@@ -782,25 +933,27 @@ export function TreatmentView({
             <span>Berechneter Preis</span>
             <strong>{euro(total)}</strong>
           </div>
-          <Input
-            label="Manueller Endpreis (€)"
-            inputMode="decimal"
-            value={price}
-            onChange={(v) => {
-              setPrice(v);
-              setDirty(true);
-            }}
-          />
-          <p className="muted">
-            Leer lassen, um den berechneten Preis zu übernehmen.
-          </p>
+          {isOwner && (
+            <>
+              <Input
+                label="Manueller Endpreis (€)"
+                inputMode="decimal"
+                value={price}
+                onChange={(v) => {
+                  setPrice(v);
+                }}
+              />
+              <p className="muted">
+                Leer lassen, um den berechneten Preis zu übernehmen.
+              </p>
+            </>
+          )}
           <Input
             label="Materialkosten (€)"
             inputMode="decimal"
             value={material}
             onChange={(v) => {
               setMaterial(v);
-              setDirty(true);
             }}
           />
           <Field label="Behandlungsnotizen">
@@ -808,7 +961,6 @@ export function TreatmentView({
               value={notes}
               onChange={(e) => {
                 setNotes(e.target.value);
-                setDirty(true);
               }}
               rows={3}
             />
@@ -822,12 +974,25 @@ export function TreatmentView({
           <Button variant="secondary" onClick={() => void save(false)}>
             Zwischenstand speichern
           </Button>
+          <p
+            role="status"
+            className={autosave.status === "error" ? "warning" : "muted"}
+          >
+            {autosave.status === "saving"
+              ? "Wird gespeichert …"
+              : autosave.status === "error"
+                ? autosave.error
+                : dirty
+                  ? "Änderungen werden gleich gespeichert …"
+                  : "Alle Änderungen gespeichert"}
+          </p>
           <p className="muted">
-            Der Timer läuft nach einem Neuladen weiter. Ungespeicherte Eingaben
-            werden dabei nicht übernommen.
+            Eingaben werden automatisch gespeichert. Der Timer läuft nach einem
+            Neuladen weiter. Bei Verbindungsproblemen diese Ansicht geöffnet
+            lassen und erneut speichern.
           </p>
         </aside>
-      </div>
+      </fieldset>
     </>
   );
 }

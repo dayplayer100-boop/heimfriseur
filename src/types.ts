@@ -1,6 +1,8 @@
 export interface Base {
   id: string;
   user_id: string;
+  business_id?: string;
+  created_by?: string;
   created_at?: string;
   updated_at?: string;
 }
@@ -76,6 +78,7 @@ export interface Member extends Base {
   sort_order: number;
 }
 export interface Treatment extends Base {
+  performed_by?: string;
   appointment_id: string;
   appointment_customer_id: string;
   customer_id: string;
@@ -138,3 +141,39 @@ export const emptyData = (): Data => ({
   treatment_services: [],
   color_formulas: [],
 });
+
+export interface TeamMember {
+  id: string;
+  business_id: string;
+  user_id: string;
+  role: "owner" | "employee";
+  display_name: string;
+  is_active: boolean;
+}
+export interface Assignment {
+  id: string;
+  appointment_id: string;
+  user_id: string;
+  is_responsible: boolean;
+}
+export interface TeamContext {
+  business: { id: string; owner_user_id: string; name: string };
+  membership: TeamMember;
+  members: TeamMember[];
+  assignments: Assignment[];
+  invitations: {
+    id: string;
+    email: string;
+    expires_at: string;
+    accepted_at: string | null;
+    revoked_at: string | null;
+  }[];
+  audit: {
+    id: string;
+    actor_id: string;
+    action: string;
+    record_id: string;
+    details: Record<string, any>;
+    created_at: string;
+  }[];
+}

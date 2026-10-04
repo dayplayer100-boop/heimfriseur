@@ -21,6 +21,20 @@ jobs:
         env:
           VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
+      - name: Browser installieren
+        run: npx playwright install --with-deps chromium
+      - name: Mobile Abläufe und Teamrechte prüfen
+        env:
+          APP_URL: http://localhost:4173
+          CHECK_PWA: '1'
+        run: |
+          npm run preview > "$RUNNER_TEMP/heimfriseur-preview.log" 2>&1 &
+          preview_pid=$!
+          trap 'kill "$preview_pid"' EXIT
+          node --input-type=module -e 'for(let n=0;n<100;n++){try{if((await fetch("http://localhost:4173")).ok)process.exit(0)}catch{}await new Promise(r=>setTimeout(r,100))}process.exit(1)'
+          npm run test:browser
+          npm run test:team-browser
+          node scripts/install-check.mjs
       - uses: actions/upload-artifact@v4
         with:
           name: heimfriseur-web-app

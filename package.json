@@ -1,6 +1,6 @@
 {
   "name": "heimfriseur",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -10,7 +10,8 @@
     "test": "vitest run",
     "test:browser": "node scripts/browser-check.mjs",
     "preview": "vite preview --host 0.0.0.0",
-    "format": "prettier --write src tests scripts *.json vite.config.ts"
+    "format": "prettier --write src tests scripts *.json vite.config.ts",
+    "test:team-browser": "node scripts/team-browser-check.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.57.0",

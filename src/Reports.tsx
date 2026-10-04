@@ -19,10 +19,11 @@ import {
   today,
 } from "./domain";
 export function Reports({ navigate }: { navigate: (p: string) => void }) {
-  const { data } = useStore();
+  const { data, team } = useStore();
   const [period, setPeriod] = useState("Dieser Monat"),
     [facility, setFacility] = useState(""),
     [group, setGroup] = useState(""),
+    [performer, setPerformer] = useState(""),
     [start, setStart] = useState(today()),
     [end, setEnd] = useState(today());
   const [from, to] = periodRange(period, start, end);
@@ -34,7 +35,10 @@ export function Reports({ navigate }: { navigate: (p: string) => void }) {
       (!group || a.group_id === group),
   );
   const treatments = data.treatments.filter(
-    (t) => t.end_time && appointments.some((a) => a.id === t.appointment_id),
+    (t) =>
+      t.end_time &&
+      (!performer || (t.performed_by || t.user_id) === performer) &&
+      appointments.some((a) => a.id === t.appointment_id),
   );
   const m = metrics(treatments, appointments);
   const cards = [
@@ -43,10 +47,20 @@ export function Reports({ navigate }: { navigate: (p: string) => void }) {
     ["Umsatz", euro(m.revenue), Euro],
     ["Materialkosten", euro(m.material), Leaf],
     ["Umsatz nach Material", euro(m.net), TrendingUp],
-    ["Arbeitszeit", minutes(m.work), Clock],
+    ["Besuchsdauer", minutes(m.work), Clock],
     ["Behandlungszeit", minutes(m.treatment), Clock],
     ["Umsatz pro Kunde", euro(m.perCustomer), Users],
-    ["Umsatz pro Arbeitsstunde", euro(m.perHour), TrendingUp],
+    [
+      performer ? "Umsatz pro Behandlungsstunde" : "Umsatz pro Besuchsstunde",
+      euro(
+        performer
+          ? m.treatment
+            ? m.revenue / (m.treatment / 60)
+            : 0
+          : m.perHour,
+      ),
+      TrendingUp,
+    ],
     ["Ø Behandlungsdauer", minutes(m.average), Clock],
   ] as const;
   return (
@@ -57,6 +71,19 @@ export function Reports({ navigate }: { navigate: (p: string) => void }) {
         description="Umsatz, Zeit und Material aus deinen tatsächlichen Behandlungen."
       />
       <div className="toolbar filters">
+        <select
+          aria-label="Ausführende Person"
+          value={performer}
+          onChange={(e) => setPerformer(e.target.value)}
+        >
+          <option value="">Alle ausführenden Personen</option>
+          {team?.members.map((m) => (
+            <option key={m.id} value={m.user_id}>
+              {m.display_name || "Geschäftsführer"}
+              {m.is_active ? "" : " (deaktiviert)"}
+            </option>
+          ))}
+        </select>
         <select
           aria-label="Zeitraum"
           value={period}
@@ -113,8 +140,17 @@ export function Reports({ navigate }: { navigate: (p: string) => void }) {
       )}
       <p className="muted">
         {dateLabel(from)} – {dateLabel(to)} · Zuordnung nach Besuchsdatum.
-        Arbeitszeit aus abgeschlossenen Besuchen.
+        Besuchsdauer aus abgeschlossenen Besuchen: jeder Besuch wird einmal
+        gezählt. Behandlungszeit ist die Summe der tatsächlichen Behandlungen,
+        auch bei paralleler Arbeit.
       </p>
+      {performer && (
+        <p className="muted">
+          Der Personenfilter gilt für Behandlungen und Umsatz. Besuchsdauer und
+          Besuchszahl zeigen weiterhin die gewählten Besuche des Unternehmens.
+          Individuelle Arbeitszeit wird nicht aus Zuweisungen geschätzt.
+        </p>
+      )}
       <div className="metric-grid">
         {cards.map(([label, value, Icon]) => (
           <section
@@ -167,10 +203,22 @@ export function Reports({ navigate }: { navigate: (p: string) => void }) {
                   <dd>{stats.customers}</dd>
                   <dt>Materialkosten</dt>
                   <dd>{euro(stats.material)}</dd>
-                  <dt>Arbeitszeit</dt>
+                  <dt>Besuchsdauer</dt>
                   <dd>{minutes(stats.work)}</dd>
-                  <dt>Umsatz / Stunde</dt>
-                  <dd>{euro(stats.perHour)}</dd>
+                  <dt>
+                    {performer
+                      ? "Umsatz / Behandlungsstunde"
+                      : "Umsatz / Besuchsstunde"}
+                  </dt>
+                  <dd>
+                    {euro(
+                      performer
+                        ? stats.treatment
+                          ? stats.revenue / (stats.treatment / 60)
+                          : 0
+                        : stats.perHour,
+                    )}
+                  </dd>
                 </dl>
               </button>
             );

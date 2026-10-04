@@ -1,3 +1,9 @@
+# HeimFriseur – aktuelle Team-Version 2.0
+
+Die bestehende Website und PWA ist um Geschäftsführer-/Mitarbeiterzugänge, sichere Einladungen, Besuchszuordnung, Autosave und protokollierte Korrekturen erweitert. Vollständige Rechteübersicht, Aktualisierungsschritte und Grenzen stehen in [TEAM-UPDATE.md](TEAM-UPDATE.md).
+
+**Bestehendes Projekt:** Nur Migration `002_team.sql` ausführen, anschließend bauen und auf die vorhandene Hosting-Site veröffentlichen. **Neue Datenbank:** `001_heimfriseur.sql` und danach `002_team.sql` ausführen. Vorher Daten sichern. Die Erweiterung wurde lokal geprüft; Live-Migration und Firebase-Deployment erfolgen separat.
+
 # HeimFriseur – Version 1
 
 Mobile React-/TypeScript-Web-App für regelmäßige Friseurbesuche in Einrichtungen. Backend: Supabase Auth und PostgreSQL mit RLS. Firebase ist in diesem Export **ausschließlich als statischer Hosting-Anbieter** vorbereitet. Die App verwendet keine Firebase-Datenbank und keine Firebase-Authentifizierung.

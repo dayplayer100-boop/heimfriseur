@@ -1,3 +1,4 @@
+import { TeamSettings } from "./Team";
 import { InstallAppButton } from "./InstallApp";
 import { useState } from "react";
 import {
@@ -20,9 +21,10 @@ export function Settings({
   tab?: string;
   edit: Edit;
 }) {
-  const { data, demo, logout, setNotify, run } = useStore();
+  const { data, demo, logout, setNotify, run, isOwner, team, beforeNavigate } =
+    useStore();
   const [tab, setTab] = useState(
-      initial === "services" ? "Leistungen" : initial,
+      !isOwner ? "App" : initial === "services" ? "Leistungen" : initial,
     ),
     [confirm, setConfirm] = useState(false);
   return (
@@ -33,24 +35,27 @@ export function Settings({
         description="Dein Unternehmen, deine Leistungen und deine App."
       />
       <div className="tabs">
-        {["Unternehmen", "Leistungen", "App"].map((t) => (
-          <button
-            key={t}
-            className={t === tab ? "active" : ""}
-            onClick={() => setTab(t)}
-          >
-            {t === "Unternehmen" ? (
-              <Building2 size={16} />
-            ) : t === "Leistungen" ? (
-              <Scissors size={16} />
-            ) : (
-              <Settings2 size={16} />
-            )}{" "}
-            {t}
-          </button>
-        ))}
+        {(isOwner ? ["Unternehmen", "Leistungen", "Team", "App"] : ["App"]).map(
+          (t) => (
+            <button
+              key={t}
+              className={t === tab ? "active" : ""}
+              onClick={() => setTab(t)}
+            >
+              {t === "Unternehmen" ? (
+                <Building2 size={16} />
+              ) : t === "Leistungen" ? (
+                <Scissors size={16} />
+              ) : (
+                <Settings2 size={16} />
+              )}{" "}
+              {t}
+            </button>
+          ),
+        )}
       </div>
-      {tab === "Unternehmen" && (
+      {tab === "Team" && isOwner && <TeamSettings />}
+      {tab === "Unternehmen" && isOwner && (
         <section className="panel settings-panel">
           <h2>Unternehmensdaten</h2>
           <p className="muted">
@@ -63,7 +68,7 @@ export function Settings({
           />
         </section>
       )}
-      {tab === "Leistungen" && (
+      {tab === "Leistungen" && isOwner && (
         <>
           <div className="section-heading">
             <h2>Leistungen & Preise</h2>
@@ -110,6 +115,10 @@ export function Settings({
         <div className="detail-columns">
           <section className="panel">
             <h2>App-Einstellungen</h2>
+            <p>
+              {team?.membership.display_name} ·{" "}
+              {isOwner ? "Geschäftsführer" : "Mitarbeiter"}
+            </p>
             <div className="settings-install">
               <InstallAppButton />
             </div>
@@ -121,17 +130,57 @@ export function Settings({
               <dt>Sprache</dt>
               <dd>Deutsch</dd>
               <dt>Version</dt>
-              <dd>1.0</dd>
+              <dd>2.0 · Team</dd>
             </dl>
             <p className="muted">
               Auf dem Smartphone über das Browser-Menü zum Home-Bildschirm
               hinzufügen. Zum Speichern von Behandlungen ist eine
               Internetverbindung erforderlich.
             </p>
-            <Button variant="secondary" onClick={() => void run(logout)}>
+            <Button
+              variant="secondary"
+              onClick={() =>
+                void beforeNavigate().then((ok) => {
+                  if (ok) return run(logout);
+                })
+              }
+            >
               <LogOut size={17} />
               {demo ? "Vorschau verlassen" : "Abmelden"}
             </Button>
+            {isOwner && (
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  const blob = new Blob(
+                    [
+                      JSON.stringify(
+                        {
+                          schema_version: 2,
+                          exported_at: new Date().toISOString(),
+                          data,
+                          team,
+                        },
+                        null,
+                        2,
+                      ),
+                    ],
+                    { type: "application/json" },
+                  );
+                  const url = URL.createObjectURL(blob),
+                    anchor = document.createElement("a");
+                  anchor.href = url;
+                  anchor.download =
+                    "HeimFriseur-Datensicherung-" +
+                    new Date().toISOString().slice(0, 10) +
+                    ".json";
+                  anchor.click();
+                  setTimeout(() => URL.revokeObjectURL(url), 1000);
+                }}
+              >
+                Unternehmensdaten exportieren
+              </Button>
+            )}
             {demo && (
               <>
                 <p className="warning">
@@ -145,10 +194,12 @@ export function Settings({
               </>
             )}
           </section>
-          <section className="panel">
-            <h2>Supabase-Verbindung</h2>
-            <ConnectionForm />
-          </section>
+          {isOwner && (
+            <section className="panel">
+              <h2>Supabase-Verbindung</h2>
+              <ConnectionForm />
+            </section>
+          )}
         </div>
       )}
       {confirm && (

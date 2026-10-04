@@ -9,8 +9,8 @@ import {
 import type { User } from "@supabase/supabase-js";
 import { supabase } from "./supabase";
 import { DemoRepository } from "./demo";
-import { emptyData, type Data, type Table } from "./types";
-function friendly(e: unknown) {
+import { emptyData, type Data, type Table, type TeamContext } from "./types";
+export function friendly(e: unknown) {
   const x = e as { message?: string; code?: string };
   if (x.code === "23503")
     return "Dieser Datensatz kann nicht gelöscht oder zugeordnet werden, weil bereits abhängige Daten vorhanden sind.";
@@ -18,6 +18,13 @@ function friendly(e: unknown) {
     return "Dieser Eintrag ist bereits vorhanden oder eine Behandlung läuft schon.";
   if (x.code === "23514")
     return "Bitte Eingaben prüfen. Beträge dürfen nicht negativ sein und Pflichtfelder müssen ausgefüllt sein.";
+  if (x.code === "23502") return "Bitte alle Pflichtfelder ausfüllen.";
+  if (["22P02", "22003", "22007", "22008"].includes(x.code || ""))
+    return "Bitte Zahlen, Datum und Uhrzeit prüfen.";
+  if (["40001", "40P01"].includes(x.code || ""))
+    return "Dieser Besuch wurde gleichzeitig geändert. Bitte erneut versuchen.";
+  if (x.code === "PGRST116")
+    return "Dieser Datensatz ist nicht verfügbar. Bitte erneut laden.";
   if (x.code === "42501") return "Du hast keinen Zugriff auf diese Daten.";
   if (x.code === "PGRST202" || x.code === "42P01")
     return "Die Datenbank ist noch nicht eingerichtet. Bitte die mitgelieferte Supabase-Migration ausführen.";
@@ -29,6 +36,11 @@ function friendly(e: unknown) {
   );
 }
 interface Store {
+  team: TeamContext | null;
+  isOwner: boolean;
+  actorId: string;
+  setNavigationGuard: (guard: (() => Promise<boolean>) | null) => void;
+  beforeNavigate: () => Promise<boolean>;
   data: Data;
   user: User | null;
   demo: boolean;
@@ -57,6 +69,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
     [notify, setNotify] = useState("");
+  const [team, setTeam] = useState<TeamContext | null>(null);
+  const navigationGuard = useRef<(() => Promise<boolean>) | null>(null);
   const repository = useRef<DemoRepository | null>(null);
   const lock = useRef(false);
   const generation = useRef(0);
@@ -64,6 +78,31 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const version = ++generation.current;
     if (demo) {
       repository.current ||= new DemoRepository();
+      const member = {
+        id: "demo-owner",
+        business_id: "demo-business",
+        user_id: "demo",
+        role: "owner" as const,
+        display_name: "Anna",
+        is_active: true,
+      };
+      setTeam({
+        business: {
+          id: "demo-business",
+          owner_user_id: "demo",
+          name: "HeimFriseur",
+        },
+        membership: member,
+        members: [member],
+        assignments: repository.current.data.appointments.map((a) => ({
+          id: a.id,
+          appointment_id: a.id,
+          user_id: "demo",
+          is_responsible: true,
+        })),
+        invitations: [],
+        audit: [],
+      });
       setData(structuredClone(repository.current.data));
       setLoading(false);
       return;
@@ -74,6 +113,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       return;
     }
     try {
+      const ctx = await supabase.rpc("get_team_context");
+      if (ctx.error) throw ctx.error;
+      const nextTeam = ctx.data as TeamContext;
+      if (version === generation.current) setTeam(nextTeam);
+      if (nextTeam.membership.role === "employee") {
+        const snapshot = await supabase.rpc("employee_snapshot");
+        if (snapshot.error) throw snapshot.error;
+        if (version === generation.current) setData(snapshot.data as Data);
+        return;
+      }
       const result = emptyData();
       await Promise.all(
         (Object.keys(result) as Table[]).map(async (table) => {
@@ -95,7 +144,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       );
       if (version === generation.current) setData(result);
     } catch (e) {
-      setError(friendly(e));
+      if (version === generation.current) {
+        // Keep the current editor and its draft during a connection failure.
+        // Permission revocation clears sensitive cached data immediately.
+        if ((e as { code?: string }).code === "42501") {
+          setTeam(null);
+          setData(emptyData());
+        }
+        setError(friendly(e));
+      }
     } finally {
       setLoading(false);
     }
@@ -119,14 +176,37 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, []);
   useEffect(() => {
     setData(emptyData());
-    if (user && !demo && supabase) {
+    setTeam(null);
+    if (
+      user &&
+      !demo &&
+      supabase &&
+      !sessionStorage.getItem("heimfriseur-invite")
+    ) {
       setLoading(true);
       supabase.rpc("initialize_account").then(({ error }) => {
         if (error) setError(friendly(error));
         void refresh();
       });
-    } else void refresh();
+    } else if (!sessionStorage.getItem("heimfriseur-invite")) void refresh();
+    else setLoading(false);
   }, [user?.id, demo]);
+  useEffect(() => {
+    if (!user || demo || !team) return;
+    const timer = setInterval(() => {
+      if (document.visibilityState === "visible" && !lock.current)
+        void refresh();
+    }, 15000);
+    const visible = () => {
+      if (document.visibilityState === "visible" && !lock.current)
+        void refresh();
+    };
+    document.addEventListener("visibilitychange", visible);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", visible);
+    };
+  }, [user?.id, demo, team?.membership.id]);
   useEffect(() => {
     if (!notify) return;
     const id = setTimeout(() => setNotify(""), 4500);
@@ -135,6 +215,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   async function save(table: Table, row: Record<string, unknown>) {
     if (demo) return repository.current!.save(table, row);
     if (!supabase || !user) throw Error("Bitte anmelden.");
+    if (team?.membership.role !== "owner")
+      throw Error("Nur der Geschäftsführer darf Stammdaten ändern.");
     const request = row.id
       ? supabase
           .from(table)
@@ -147,6 +229,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     return result.data.id as string;
   }
   async function remove(table: Table, id: string) {
+    if (!demo && team?.membership.role !== "owner")
+      throw Error("Nur der Geschäftsführer darf Daten löschen.");
     if (demo) {
       repository.current!.remove(table, id);
       return;
@@ -194,12 +278,21 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       }
     }
     setData(emptyData());
+    setTeam(null);
     setUser(null);
   }
   return (
     <Context.Provider
       value={{
         data,
+        team,
+        isOwner: demo || team?.membership.role === "owner",
+        actorId: demo ? "demo" : user?.id || "",
+        setNavigationGuard: (guard) => {
+          navigationGuard.current = guard;
+        },
+        beforeNavigate: () =>
+          navigationGuard.current?.() ?? Promise.resolve(true),
         user,
         demo,
         loading,

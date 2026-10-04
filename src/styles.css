@@ -2677,3 +2677,78 @@ code {
     display: none;
   }
 }
+
+/* Team controls remain large enough for on-site touch input. */
+.assignment-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+.assignment-summary p {
+  margin: 8px 0 0;
+}
+.audit-row {
+  padding: 16px 0;
+  border-bottom: 1px solid var(--line);
+  overflow-wrap: anywhere;
+}
+.audit-row > span {
+  display: block;
+  font-size: 13px;
+  margin-top: 6px;
+  color: var(--muted);
+}
+.invite-link {
+  margin: 20px 0;
+  display: grid;
+  gap: 12px;
+}
+.invite-link input {
+  width: 100%;
+  margin-top: 8px;
+}
+.service-option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 52px;
+}
+.service-option input {
+  width: 22px;
+  height: 22px;
+}
+.treatment-fields {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+.treatment-fields[disabled] {
+  opacity: 0.7;
+}
+.bottom-nav {
+  justify-content: space-around;
+}
+.update-banner {
+  padding: 14px 20px;
+  background: #e7f0eb;
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+@media (max-width: 600px) {
+  .assignment-summary .button {
+    width: 100%;
+  }
+  .list-row {
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  .invite-link input {
+    min-width: 0;
+  }
+}

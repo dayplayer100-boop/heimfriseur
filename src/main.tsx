@@ -1,3 +1,8 @@
+const inviteToken = new URLSearchParams(location.search).get("invite");
+if (inviteToken) {
+  sessionStorage.setItem("heimfriseur-invite", inviteToken);
+  history.replaceState(null, "", location.pathname + location.hash);
+}
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
 import { InstallProvider } from "./InstallApp";

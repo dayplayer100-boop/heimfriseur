@@ -1,3 +1,5 @@
+import { AppUpdate } from "./AppUpdate";
+import { TeamInvite, EmployeeCustomer } from "./Team";
 import { InstallAppButton } from "./InstallApp";
 import { useState, useEffect } from "react";
 import {
@@ -56,7 +58,12 @@ export function App() {
     remove,
     rpc,
     logout,
+    isOwner,
+    team,
   } = store;
+  const visibleNavigation = isOwner
+    ? navigation
+    : navigation.filter(([key]) => ["dashboard", "calendar"].includes(key));
   const [path, setPath] = useState(location.hash.slice(1) || "dashboard"),
     [modal, setModal] = useState<{
       type: "edit" | "plan" | "delete";
@@ -70,8 +77,13 @@ export function App() {
       new URLSearchParams(location.search).has("reset"),
     );
   useEffect(() => {
-    const handler = () => {
-      setPath(location.hash.slice(1) || "dashboard");
+    const handler = async () => {
+      const nextPath = location.hash.slice(1) || "dashboard";
+      if (!(await store.beforeNavigate())) {
+        history.replaceState(null, "", "#" + path);
+        return;
+      }
+      setPath(nextPath);
       setModal(null);
       window.scrollTo(0, 0);
     };
@@ -88,13 +100,14 @@ export function App() {
       window.removeEventListener("offline", connected);
       listener?.data.subscription.unsubscribe();
     };
-  }, []);
+  }, [path]);
   const navigate = (p: string) => {
     location.hash = p;
   };
   const edit = (table: Table, row?: Row, preset?: Record<string, string>) =>
-    setModal({ type: "edit", table, row, preset });
+    isOwner && setModal({ type: "edit", table, row, preset });
   const plan = (group?: string) => {
+    if (!isOwner) return;
     if (!data.groups.length) {
       setError("Lege zuerst eine Einrichtung und einen Wohnbereich an.");
       navigate("facilities");
@@ -103,7 +116,7 @@ export function App() {
     setModal({ type: "plan", group });
   };
   const confirmDelete = (table: Table, row: Row) =>
-    setModal({ type: "delete", table, row });
+    isOwner && setModal({ type: "delete", table, row });
   const [page, id] = path.split("/");
   const active =
     page === "facility" || page === "group"
@@ -163,6 +176,35 @@ export function App() {
       </section>
     );
   else if (!user && !demo) content = <Auth />;
+  else if (!demo && sessionStorage.getItem("heimfriseur-invite"))
+    content = <TeamInvite />;
+  else if (!demo && !team)
+    content = (
+      <section className="panel">
+        <h2>Unternehmenszugang nicht verfügbar</h2>
+        <p>
+          Bitte Verbindung prüfen. Ein deaktivierter Zugang muss vom
+          Geschäftsführer freigeschaltet werden. Bei einem App-Update muss die
+          Team-Migration ausgeführt sein.
+        </p>
+        <Button onClick={() => void store.refresh()}>Erneut laden</Button>
+        <Button variant="secondary" onClick={() => void logout()}>
+          Abmelden
+        </Button>
+      </section>
+    );
+  else if (
+    !isOwner &&
+    ![
+      "dashboard",
+      "calendar",
+      "visit",
+      "treatment",
+      "settings",
+      "customer",
+    ].includes(page)
+  )
+    content = <Dashboard navigate={navigate} plan={() => {}} />;
   else
     switch (page) {
       case "calendar":
@@ -199,7 +241,9 @@ export function App() {
         content = <Customers navigate={navigate} edit={edit} />;
         break;
       case "customer":
-        content = (
+        content = !isOwner ? (
+          <EmployeeCustomer id={id} />
+        ) : (
           <CustomerDetail
             key={id}
             id={id}
@@ -239,7 +283,7 @@ export function App() {
             </a>
             <span className="sidebar-caption">DEIN ARBEITSTAG</span>
             <nav>
-              {navigation.map(([key, label, Icon]) => (
+              {visibleNavigation.map(([key, label, Icon]) => (
                 <a
                   key={key}
                   href={"#" + key}
@@ -268,7 +312,9 @@ export function App() {
                 </span>
                 <div>
                   <strong>
-                    {data.profiles[0]?.first_name || "Mein Konto"}
+                    {team?.membership.display_name ||
+                      data.profiles[0]?.first_name ||
+                      "Mein Konto"}
                   </strong>
                   <span>
                     {data.profiles[0]?.business_name || "HeimFriseur"}
@@ -277,7 +323,11 @@ export function App() {
                 <button
                   className="icon-button"
                   aria-label="Abmelden"
-                  onClick={() => void run(logout)}
+                  onClick={() =>
+                    void store.beforeNavigate().then((ok) => {
+                      if (ok) return run(logout);
+                    })
+                  }
                 >
                   <LogOut size={18} />
                 </button>
@@ -302,7 +352,9 @@ export function App() {
               <div className="topbar-right">
                 <InstallAppButton />
                 <span className="desktop-only">
-                  {data.profiles[0]?.business_name || "Mein mobiler Salon"}
+                  {data.profiles[0]?.business_name ||
+                    team?.business.name ||
+                    "Mein mobiler Salon"}
                 </span>
                 <button
                   className="icon-button"
@@ -318,7 +370,13 @@ export function App() {
                 <span>
                   Vorschau · Fiktive Beispieldaten, nur in diesem Browser.
                 </span>
-                <button onClick={() => void run(logout)}>
+                <button
+                  onClick={() =>
+                    void store.beforeNavigate().then((ok) => {
+                      if (ok) return run(logout);
+                    })
+                  }
+                >
                   Mit Supabase verbinden
                 </button>
               </div>
@@ -330,6 +388,7 @@ export function App() {
                 verbunden bist.
               </div>
             )}
+            <AppUpdate />
             <main>{content}</main>
             <footer className="app-footer">
               <Scissors size={14} />
@@ -338,7 +397,7 @@ export function App() {
             </footer>
           </div>
           <nav className="bottom-nav">
-            {navigation.map(([key, label, Icon]) => (
+            {visibleNavigation.map(([key, label, Icon]) => (
               <a
                 href={"#" + key}
                 key={key}

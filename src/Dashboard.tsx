@@ -20,7 +20,7 @@ export function VisitCard({
   onOpen: () => void;
   featured?: boolean;
 }) {
-  const { data } = useStore();
+  const { data, isOwner, team, actorId } = useStore();
   const s = visitStats(data, a);
   return (
     <article className={`visit-card ${featured ? "featured" : ""}`}>
@@ -33,6 +33,19 @@ export function VisitCard({
       </div>
       <h3>{data.facilities.find((f) => f.id === a.facility_id)?.name}</h3>
       <p>{data.groups.find((g) => g.id === a.group_id)?.name}</p>
+      {isOwner && (
+        <p className="muted">
+          Team:{" "}
+          {team?.assignments
+            .filter((x) => x.appointment_id === a.id)
+            .map(
+              (x) =>
+                team.members.find((m) => m.user_id === x.user_id)
+                  ?.display_name || "Geschäftsführer",
+            )
+            .join(" · ") || "Nicht zugewiesen"}
+        </p>
+      )}
       <div className="visit-meta">
         <Meta type="calendar">{dateLabel(a.appointment_date)}</Meta>
         <span className="meta">
@@ -57,8 +70,10 @@ export function VisitCard({
           </div>
           <div className="visit-numbers">
             <div>
-              <small>Geplanter Umsatz</small>
-              <strong>{euro(s.planned)}</strong>
+              <small>{isOwner ? "Geplanter Umsatz" : "Zugewiesen an"}</small>
+              <strong>
+                {isOwner ? euro(s.planned) : team?.membership.display_name}
+              </strong>
             </div>
             <div>
               <small>Geschätzte Restzeit</small>
@@ -80,7 +95,7 @@ export function Dashboard({
   navigate: (p: string) => void;
   plan: () => void;
 }) {
-  const { data } = useStore();
+  const { data, isOwner, team, actorId } = useStore();
   const date = today(),
     p = data.profiles[0];
   const todays = data.appointments.filter(
@@ -126,12 +141,63 @@ export function Dashboard({
         title={`Guten Tag${p?.first_name ? ", " + p.first_name : ""}.`}
         description="Alles bereit für deinen nächsten Besuch."
         action={
-          <Button onClick={plan}>
-            <CalendarDays size={18} />
-            Besuch planen
-          </Button>
+          isOwner && (
+            <Button onClick={plan}>
+              <CalendarDays size={18} />
+              Besuch planen
+            </Button>
+          )
         }
       />
+      {data.treatments
+        .filter((t) => !t.end_time && (t.performed_by || t.user_id) === actorId)
+        .map((t) => (
+          <section className="panel" key={t.id}>
+            <h2>Deine laufende Behandlung</h2>
+            <Button onClick={() => navigate("treatment/" + t.id)}>
+              Behandlung fortsetzen
+            </Button>
+          </section>
+        ))}
+      {isOwner &&
+        team &&
+        data.appointments.some(
+          (a) =>
+            !["Abgeschlossen", "Abgesagt"].includes(a.status) &&
+            !team.assignments.some(
+              (x) =>
+                x.appointment_id === a.id &&
+                team.members.some(
+                  (m) => m.user_id === x.user_id && m.is_active,
+                ),
+            ),
+        ) && (
+          <section className="panel">
+            <h2>Besuche ohne aktives Team</h2>
+            {data.appointments
+              .filter(
+                (a) =>
+                  !["Abgeschlossen", "Abgesagt"].includes(a.status) &&
+                  !team.assignments.some(
+                    (x) =>
+                      x.appointment_id === a.id &&
+                      team.members.some(
+                        (m) => m.user_id === x.user_id && m.is_active,
+                      ),
+                  ),
+              )
+              .map((a) => (
+                <Button
+                  key={a.id}
+                  variant="secondary"
+                  onClick={() => navigate("visit/" + a.id)}
+                >
+                  {dateLabel(a.appointment_date)} ·{" "}
+                  {data.facilities.find((f) => f.id === a.facility_id)?.name}
+                </Button>
+              ))}
+          </section>
+        )}
       <div className="dashboard-columns">
         <section>
           <div className="section-heading">
@@ -154,8 +220,16 @@ export function Dashboard({
           ) : (
             <Empty
               title="Heute sind keine Besuche geplant."
-              text="Plane deinen nächsten Besuch in einer Einrichtung."
-              action={<Button onClick={plan}>Termin hinzufügen</Button>}
+              text={
+                isOwner
+                  ? "Plane deinen nächsten Besuch in einer Einrichtung."
+                  : "Dein Geschäftsführer kann dir Besuche zuweisen."
+              }
+              action={
+                isOwner ? (
+                  <Button onClick={plan}>Termin hinzufügen</Button>
+                ) : undefined
+              }
             />
           )}
           <div className="section-heading next-heading">
@@ -213,98 +287,105 @@ export function Dashboard({
             )}
           </div>
         </section>
-        <aside>
-          <div className="month-card">
-            <div className="month-heading">
-              <div>
-                <span className="eyebrow">DEIN MONAT IM BLICK</span>
-                <h2>
-                  {new Date().toLocaleDateString("de-DE", {
-                    month: "long",
-                    year: "numeric",
-                    timeZone: "Europe/Berlin",
-                  })}
-                </h2>
+        {isOwner && (
+          <aside>
+            <div className="month-card">
+              <div className="month-heading">
+                <div>
+                  <span className="eyebrow">DEIN MONAT IM BLICK</span>
+                  <h2>
+                    {new Date().toLocaleDateString("de-DE", {
+                      month: "long",
+                      year: "numeric",
+                      timeZone: "Europe/Berlin",
+                    })}
+                  </h2>
+                </div>
+                <span className="round-icon">
+                  <CalendarDays size={22} />
+                </span>
               </div>
-              <span className="round-icon">
-                <CalendarDays size={22} />
-              </span>
+              <div className="month-revenue">
+                <span>Umsatz</span>
+                <strong>{euro(m.revenue)}</strong>
+                <span>aus abgeschlossenen Behandlungen</span>
+              </div>
+              <div className="month-row">
+                <Users size={18} />
+                <span>Kunden behandelt</span>
+                <strong>{m.customers}</strong>
+              </div>
+              <div className="month-row">
+                <Leaf size={18} />
+                <span>Materialkosten</span>
+                <strong>{euro(m.material)}</strong>
+              </div>
+              <div className="month-row">
+                <Clock size={18} />
+                <span>Arbeitszeit</span>
+                <strong>{minutes(m.work)}</strong>
+              </div>
+              <div className="month-net">
+                <span>Umsatz nach Material</span>
+                <strong>{euro(m.net)}</strong>
+              </div>
+              <button
+                className="text-button"
+                onClick={() => navigate("reports")}
+              >
+                Zur Auswertung <ArrowUpRight size={16} />
+              </button>
             </div>
-            <div className="month-revenue">
-              <span>Umsatz</span>
-              <strong>{euro(m.revenue)}</strong>
-              <span>aus abgeschlossenen Behandlungen</span>
+            <div className="workflow-note">
+              <Scissors size={24} />
+              <div>
+                <h3>Ein Kunde nach dem anderen.</h3>
+                <p>
+                  Öffne deinen Besuch, starte die Behandlung und behalte den
+                  Überblick.
+                </p>
+              </div>
             </div>
-            <div className="month-row">
-              <Users size={18} />
-              <span>Kunden behandelt</span>
-              <strong>{m.customers}</strong>
-            </div>
-            <div className="month-row">
-              <Leaf size={18} />
-              <span>Materialkosten</span>
-              <strong>{euro(m.material)}</strong>
-            </div>
-            <div className="month-row">
-              <Clock size={18} />
-              <span>Arbeitszeit</span>
-              <strong>{minutes(m.work)}</strong>
-            </div>
-            <div className="month-net">
-              <span>Umsatz nach Material</span>
-              <strong>{euro(m.net)}</strong>
-            </div>
-            <button className="text-button" onClick={() => navigate("reports")}>
-              Zur Auswertung <ArrowUpRight size={16} />
-            </button>
-          </div>
-          <div className="workflow-note">
-            <Scissors size={24} />
-            <div>
-              <h3>Ein Kunde nach dem anderen.</h3>
-              <p>
-                Öffne deinen Besuch, starte die Behandlung und behalte den
-                Überblick.
-              </p>
-            </div>
-          </div>
-        </aside>
+          </aside>
+        )}
       </div>
-      <div className="quick-links">
-        <button onClick={() => navigate("facilities")}>
-          <span className="round-icon">
-            <CalendarDays />
-          </span>
-          <span>
-            <strong>{data.facilities.length} Einrichtungen</strong>
-            <small>Deine regelmäßigen Anlaufstellen</small>
-          </span>
-          <ArrowUpRight />
-        </button>
-        <button onClick={() => navigate("customers")}>
-          <span className="round-icon">
-            <Users />
-          </span>
-          <span>
-            <strong>
-              {data.customers.filter((c) => c.status === "Aktiv").length} aktive
-              Kunden
-            </strong>
-            <small>Alles Wichtige zu deinen Kunden</small>
-          </span>
-          <ArrowUpRight />
-        </button>
-        <button onClick={() => navigate("settings/services")}>
-          <span className="round-icon">
-            <Euro />
-          </span>
-          <span>
-            <strong>Leistungen & Preise</strong>
-            <small>Deine Preisliste verwalten</small>
-          </span>
-          <ArrowUpRight />
-        </button>
-      </div>
+      {isOwner && (
+        <div className="quick-links">
+          <button onClick={() => navigate("facilities")}>
+            <span className="round-icon">
+              <CalendarDays />
+            </span>
+            <span>
+              <strong>{data.facilities.length} Einrichtungen</strong>
+              <small>Deine regelmäßigen Anlaufstellen</small>
+            </span>
+            <ArrowUpRight />
+          </button>
+          <button onClick={() => navigate("customers")}>
+            <span className="round-icon">
+              <Users />
+            </span>
+            <span>
+              <strong>
+                {data.customers.filter((c) => c.status === "Aktiv").length}{" "}
+                aktive Kunden
+              </strong>
+              <small>Alles Wichtige zu deinen Kunden</small>
+            </span>
+            <ArrowUpRight />
+          </button>
+          <button onClick={() => navigate("settings/services")}>
+            <span className="round-icon">
+              <Euro />
+            </span>
+            <span>
+              <strong>Leistungen & Preise</strong>
+              <small>Deine Preisliste verwalten</small>
+            </span>
+            <ArrowUpRight />
+          </button>
+        </div>
+      )}
     </>
   );
 }

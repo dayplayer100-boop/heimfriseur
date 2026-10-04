@@ -44,6 +44,7 @@ export function ConnectionForm() {
   );
 }
 export function Auth() {
+  const invitation = sessionStorage.getItem("heimfriseur-invite");
   const { enterDemo, setError } = useStore();
   const [mode, setMode] = useState("login"),
     [pending, setPending] = useState(false),
@@ -70,7 +71,13 @@ export function Auth() {
           ? await supabase.auth.signUp({
               email: d.email,
               password: d.password,
-              options: { emailRedirectTo: location.origin },
+              options: {
+                emailRedirectTo:
+                  location.origin +
+                  (invitation
+                    ? "/?invite=" + encodeURIComponent(invitation)
+                    : ""),
+              },
             })
           : mode === "reset"
             ? await supabase.auth.resetPasswordForEmail(d.email, {
@@ -137,6 +144,13 @@ export function Auth() {
       </div>
       <section className="auth-card">
         <div className="eyebrow">WILLKOMMEN BEI HEIMFRISEUR</div>
+        {invitation && (
+          <p className="success">
+            Du bist zu einem Team eingeladen. Melde dich mit der eingeladenen
+            E-Mail-Adresse an oder registriere sie. Öffne nach der
+            E-Mail-Bestätigung erneut den Einladungslink.
+          </p>
+        )}
         <h2>
           {setup
             ? "Supabase verbinden"
