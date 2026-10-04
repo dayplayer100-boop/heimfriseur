@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { InstallAppButton } from "./InstallApp";
 import { Scissors, ShieldCheck, ArrowLeft } from "lucide-react";
 import { supabase, connection, configure } from "./supabase";
 import { useStore } from "./store";
@@ -147,6 +148,11 @@ export function Auth() {
                   ? "Neues Passwort"
                   : "Schön, dass du da bist."}
         </h2>
+        {!setup && mode === "login" && (
+          <div className="auth-install">
+            <InstallAppButton />
+          </div>
+        )}
         {setup ? (
           <ConnectionForm />
         ) : supabase ? (

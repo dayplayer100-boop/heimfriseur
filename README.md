@@ -110,3 +110,9 @@ Das ist eine Anleitung; **während der Erstellung dieses Exports wurde kein Depl
 ## Betrieb
 
 Echte Schreibvorgänge benötigen Internet. Der Service Worker speichert nur die Offline-Seite, keine Kunden-, Behandlungs- oder Auth-Daten. Regelmäßige Datenbank-Backups im Supabase-Projekt einrichten. Ein Logo kann als Bild-URL in den Unternehmensdaten hinterlegt werden; für die Übernahme ins PDF muss die Quelle Browserzugriff per CORS erlauben. Ein nicht ladbares Logo verhindert den Bericht nicht.
+
+## Installation direkt von der Website
+
+Ein sichtbarer Button „App installieren“ befindet sich auf der Anmeldeseite, in der App-Kopfleiste und unter Einstellungen → App. Wenn der Browser ein Installationsangebot bereitstellt, öffnet der Button dessen nativen Dialog. Auf iPhone/iPad und bei fehlendem Browserangebot erscheinen die passenden manuellen Schritte. In der installierten App wird der Button ausgeblendet.
+
+Die zusätzliche Prüfung `APP_URL=http://localhost:4173 CHROMIUM_PATH=/usr/bin/chromium node scripts/install-check.mjs` prüft die sichtbare Schaltfläche, das Browser-Event für die Installation, den Zustand nach Installation und die iPhone-Anleitung. Der native Aufruf wird dabei über das Browser-Event simuliert; die tatsächliche Betriebssysteminstallation ist auf dem Endgerät zu prüfen.

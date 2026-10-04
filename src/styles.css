@@ -2637,3 +2637,43 @@ code {
     font-size: 1rem;
   }
 }
+
+.auth-install {
+  margin-bottom: 24px;
+}
+.auth-install .button {
+  width: 100%;
+}
+.settings-install {
+  margin-bottom: 24px;
+}
+.install-help {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  margin-bottom: 20px;
+}
+.install-help p {
+  margin: 0;
+}
+.install-steps {
+  padding-left: 24px;
+  line-height: 1.7;
+  color: #4b6354;
+}
+.install-steps li {
+  padding: 5px 0 11px 4px;
+}
+@media (max-width: 760px) {
+  .topbar-right {
+    gap: 4px;
+  }
+  .topbar-right .install-button {
+    width: 44px;
+    min-height: 44px;
+    padding: 10px;
+  }
+  .topbar-right .install-label {
+    display: none;
+  }
+}

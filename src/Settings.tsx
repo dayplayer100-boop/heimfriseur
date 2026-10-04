@@ -1,3 +1,4 @@
+import { InstallAppButton } from "./InstallApp";
 import { useState } from "react";
 import {
   LogOut,
@@ -109,6 +110,9 @@ export function Settings({
         <div className="detail-columns">
           <section className="panel">
             <h2>App-Einstellungen</h2>
+            <div className="settings-install">
+              <InstallAppButton />
+            </div>
             <dl>
               <dt>Zeitzone</dt>
               <dd>Europe/Berlin</dd>

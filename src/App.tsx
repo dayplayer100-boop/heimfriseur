@@ -1,3 +1,4 @@
+import { InstallAppButton } from "./InstallApp";
 import { useState, useEffect } from "react";
 import {
   Scissors,
@@ -299,6 +300,7 @@ export function App() {
                   "Einstellungen"}
               </div>
               <div className="topbar-right">
+                <InstallAppButton />
                 <span className="desktop-only">
                   {data.profiles[0]?.business_name || "Mein mobiler Salon"}
                 </span>

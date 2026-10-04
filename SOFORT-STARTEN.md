@@ -26,6 +26,8 @@ Am Ende erscheint die HTTPS-Adresse. Ohne Supabase-Verbindung lässt sich zunäc
 
 ## Auf dem Smartphone installieren
 
+Die Website bietet jetzt den Button **„App installieren“**. Klicke darauf: Auf unterstützten Browsern öffnet sich der Installationsdialog; andernfalls erscheinen die passenden Schritte.
+
 - **iPhone / iPad:** Die veröffentlichte Adresse in Safari öffnen, auf Teilen tippen und „Zum Home-Bildschirm“ wählen.
 - **Android:** Die Adresse in Chrome öffnen, Browser-Menü → „App installieren“ oder „Zum Startbildschirm hinzufügen“.
 
