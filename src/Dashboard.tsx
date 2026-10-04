@@ -1,3 +1,4 @@
+import { visitArea } from "./domain";
 import {
   CalendarDays,
   Users,
@@ -32,7 +33,7 @@ export function VisitCard({
         <Status status={a.status} />
       </div>
       <h3>{data.facilities.find((f) => f.id === a.facility_id)?.name}</h3>
-      <p>{data.groups.find((g) => g.id === a.group_id)?.name}</p>
+      <p>{visitArea(data, a)}</p>
       {isOwner && (
         <p className="muted">
           Team:{" "}
@@ -265,8 +266,7 @@ export function Dashboard({
                       }
                     </strong>
                     <span>
-                      {data.groups.find((g) => g.id === a.group_id)?.name} ·{" "}
-                      {a.start_time.slice(0, 5)} Uhr
+                      {visitArea(data, a)} · {a.start_time.slice(0, 5)} Uhr
                     </span>
                   </div>
                   <span className="customer-count">

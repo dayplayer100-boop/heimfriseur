@@ -30,12 +30,21 @@ export const minutes = (n: number) => {
     : `${rounded} Min.`;
 };
 export const fullName = (c: { first_name: string; last_name: string }) =>
-  `${c.first_name} ${c.last_name}`;
+  `${c.first_name || ""} ${c.last_name || ""}`.trim() || "Name noch offen";
 export function customerDefaults(d: Data, id: string) {
   return d.customer_default_services
     .filter((x) => x.customer_id === id)
     .flatMap((x) =>
-      d.services.filter((s) => s.id === x.service_id && s.is_active),
+      d.services
+        .filter((s) => s.id === x.service_id && s.is_active)
+        .map((s) => ({
+          ...s,
+          price: effectivePrice(
+            d,
+            s.id,
+            d.customers.find((c) => c.id === id)?.facility_id,
+          ),
+        })),
     );
 }
 export function visitStats(d: Data, a: Appointment) {
@@ -130,4 +139,49 @@ export function periodRange(
   if (period === "Dieses Jahr") return [end.slice(0, 4) + "-01-01", end];
   if (period === "Benutzerdefiniert") return [customStart, customEnd];
   return [end.slice(0, 7) + "-01", end];
+}
+
+export function effectivePrice(
+  data: Data,
+  serviceId: string,
+  facilityId?: string,
+) {
+  return Number(
+    data.facility_service_prices?.find(
+      (p) => p.service_id === serviceId && p.facility_id === facilityId,
+    )?.price ??
+      data.services.find((s) => s.id === serviceId)?.price ??
+      0,
+  );
+}
+export function customerDue(
+  data: Data,
+  customer: Data["customers"][number],
+  date: string,
+) {
+  if (customer.status !== "Aktiv" || customer.hair_request === "Nein")
+    return false;
+  if (customer.next_due_date) return customer.next_due_date <= date;
+  const cohort = data.cohorts.find((g) => g.id === customer.cohort_id);
+  if (!cohort) return true;
+  const days = Math.floor(
+    (Date.parse(date + "T12:00Z") -
+      Date.parse(cohort.anchor_date + "T12:00Z")) /
+      86400000,
+  );
+  return (
+    days >= 0 &&
+    Math.floor(days / 7) %
+      (customer.recurrence_weeks || cohort.recurrence_weeks) ===
+      0
+  );
+}
+
+export function visitArea(data: Data, appointment: Appointment) {
+  const cohort = data.cohorts.find((c) => c.id === appointment.cohort_id);
+  if (cohort) return cohort.name;
+  return appointment.all_groups
+    ? "Alle Wohnbereiche"
+    : data.groups.find((g) => g.id === appointment.group_id)?.name ||
+        "Wohnbereich noch offen";
 }

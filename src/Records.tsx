@@ -1,3 +1,5 @@
+import { FacilityTools } from "./FacilityTools";
+import { BillingEditor } from "./Payments";
 import { useState } from "react";
 import {
   Building2,
@@ -155,7 +157,7 @@ export function FacilityDetail({
   id: string;
   navigate: (p: string) => void;
   edit: Edit;
-  plan: (group?: string) => void;
+  plan: (group?: string, facility?: string) => void;
   confirmDelete: (table: Table, row: Row) => void;
 }) {
   const { data } = useStore();
@@ -185,21 +187,24 @@ export function FacilityDetail({
             <Button variant="secondary" onClick={() => edit("facilities", f)}>
               Bearbeiten
             </Button>
-            <Button onClick={() => plan(groups[0]?.id)}>Besuch planen</Button>
+            <Button onClick={() => plan(undefined, id)}>Besuch planen</Button>
           </div>
         }
       />
       <div className="tabs">
-        {["Übersicht", "Gruppen", "Kunden", "Besuche"].map((t) => (
-          <button
-            key={t}
-            className={tab === t ? "active" : ""}
-            onClick={() => setTab(t)}
-          >
-            {t}
-          </button>
-        ))}
+        {["Übersicht", "Gruppen", "Kunden", "Besuche", "Preise & Runden"].map(
+          (t) => (
+            <button
+              key={t}
+              className={tab === t ? "active" : ""}
+              onClick={() => setTab(t)}
+            >
+              {t}
+            </button>
+          ),
+        )}
       </div>
+      {tab === "Preise & Runden" && <FacilityTools facilityId={id} />}
       {tab === "Übersicht" && (
         <div className="detail-columns">
           <section className="panel">
@@ -341,7 +346,7 @@ export function FacilityDetail({
             <Empty
               title="Noch keine Besuche"
               action={
-                <Button onClick={() => plan(groups[0]?.id)}>
+                <Button onClick={() => plan(undefined, id)}>
                   Besuch planen
                 </Button>
               }
@@ -647,7 +652,7 @@ export function CustomerDetail({
         }
       />
       <div className="tabs">
-        {["Übersicht", "Historie", "Farbe"].map((t) => (
+        {["Übersicht", "Historie", "Farbe", "Abrechnung"].map((t) => (
           <button
             key={t}
             className={tab === t ? "active" : ""}
@@ -657,6 +662,7 @@ export function CustomerDetail({
           </button>
         ))}
       </div>
+      {tab === "Abrechnung" && <BillingEditor customerId={id} />}
       {tab === "Übersicht" && (
         <div className="detail-columns">
           <section className="panel">
@@ -670,6 +676,23 @@ export function CustomerDetail({
               <dd>{data.groups.find((g) => g.id === c.group_id)?.name}</dd>
               <dt>Zimmer</dt>
               <dd>{c.room_number || "–"}</dd>
+              <dt>Kundenrhythmus</dt>
+              <dd>
+                {c.recurrence_weeks
+                  ? "Alle " + c.recurrence_weeks + " Wochen"
+                  : "Von Untergruppe / Wohnbereich"}
+              </dd>
+              <dt>Untergruppe</dt>
+              <dd>
+                {data.cohorts.find((g) => g.id === c.cohort_id)?.name ||
+                  "Keine"}
+              </dd>
+              <dt>Nächste fällige Behandlung</dt>
+              <dd>
+                {c.next_due_date ? dateLabel(c.next_due_date) : "Noch offen"}
+              </dd>
+              <dt>Friseur gewünscht</dt>
+              <dd>{c.hair_request || "Unbekannt"}</dd>
               <dt>Status</dt>
               <dd>{c.status}</dd>
               <dt>Letzte Behandlung</dt>

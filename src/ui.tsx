@@ -8,7 +8,13 @@ import {
   Building2,
   CalendarDays,
 } from "lucide-react";
-import type { ReactNode, FormEvent } from "react";
+import {
+  cloneElement,
+  isValidElement,
+  type ReactElement,
+  type ReactNode,
+  type FormEvent,
+} from "react";
 import { useStore } from "./store";
 export function Button({
   children,
@@ -120,7 +126,13 @@ export function Field({
   return (
     <label className="field">
       <span>{label}</span>
-      {children}
+      {isValidElement(children) &&
+      typeof children.type === "string" &&
+      ["input", "select", "textarea"].includes(children.type)
+        ? cloneElement(children as ReactElement<{ "aria-label"?: string }>, {
+            "aria-label": label,
+          })
+        : children}
     </label>
   );
 }
@@ -131,6 +143,7 @@ export function Input({
   required = false,
   type = "text",
   min,
+  max,
   step,
   inputMode,
   onChange,
@@ -141,6 +154,7 @@ export function Input({
   required?: boolean;
   type?: string;
   min?: number;
+  max?: number;
   step?: string;
   inputMode?: "text" | "decimal" | "numeric" | "email" | "tel" | "url";
   onChange?: (value: string) => void;
@@ -154,6 +168,7 @@ export function Input({
         value={onChange ? value : undefined}
         onChange={onChange ? (e) => onChange(e.target.value) : undefined}
         required={required}
+        max={max}
         min={min}
         step={step}
         inputMode={inputMode}

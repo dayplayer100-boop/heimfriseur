@@ -19,6 +19,9 @@ await db.exec(
   ),
 );
 await db.exec(readFileSync("supabase/migrations/002_team.sql", "utf8"));
+await db.exec(
+  readFileSync("supabase/migrations/003_practical_workflow.sql", "utf8"),
+);
 await q("select set_config('request.jwt.claim.sub',$1,false)", [O]);
 await q("select initialize_account()");
 const facility = (
@@ -79,6 +82,11 @@ let failSave = false,
   delaySave = 0;
 const errors = [];
 async function pageFor(actor, email) {
+  await db.exec("reset role");
+  await q(
+    "update business_memberships set onboarding_completed=true where user_id=$1",
+    [actor],
+  );
   const context = await browser.newContext({
     viewport: { width: 390, height: 844 },
   });
@@ -154,7 +162,25 @@ async function pageFor(actor, email) {
             assert.match(table, /^[a-z_]+$/);
             assert.equal(request.method(), "GET");
             const rows = await q(`select * from public.${table} order by id`);
-            await route.fulfill({ json: rows });
+            await route.fulfill({
+              json: rows.map((row) =>
+                Object.fromEntries(
+                  Object.entries(row).map(([key, value]) => [
+                    key,
+                    value instanceof Date &&
+                    [
+                      "appointment_date",
+                      "next_due_date",
+                      "anchor_date",
+                      "formula_date",
+                      "followup_date",
+                    ].includes(key)
+                      ? value.toISOString().slice(0, 10)
+                      : value,
+                  ]),
+                ),
+              ),
+            });
           }
         } catch (e) {
           await route.fulfill({
@@ -248,6 +274,9 @@ try {
     .getByRole("button", { name: "Behandlung beenden", exact: true })
     .click();
   await employee.getByRole("heading", { name: "Kundenliste" }).waitFor();
+  await employee
+    .getByRole("button", { name: "Später erfassen", exact: true })
+    .click();
   const second = await pageFor(F, "second@test.invalid");
   await second
     .getByRole("button", { name: "Besuch öffnen", exact: true })
@@ -264,6 +293,9 @@ try {
     .getByRole("button", { name: "Behandlung beenden", exact: true })
     .click();
   await second.getByRole("heading", { name: "Kundenliste" }).waitFor();
+  await second
+    .getByRole("button", { name: "Später erfassen", exact: true })
+    .click();
   await employee.reload();
   await employee
     .getByRole("button", { name: "Besuch abschließen", exact: true })
@@ -291,6 +323,29 @@ try {
   await owner
     .getByRole("heading", { name: "Dein Team", exact: true })
     .waitFor();
+  await owner
+    .getByRole("button", { name: "Berechtigungen", exact: true })
+    .first()
+    .click();
+  await owner
+    .getByRole("checkbox", {
+      name: "Kundendaten und Kundenrhythmus ändern",
+      exact: true,
+    })
+    .check();
+  await owner
+    .getByRole("button", { name: "Berechtigungen speichern", exact: true })
+    .click();
+  await owner.getByRole("dialog").waitFor({ state: "hidden" });
+  await db.exec("reset role");
+  assert.equal(
+    (
+      await q("select permissions from business_memberships where user_id=$1", [
+        E,
+      ])
+    )[0].permissions.edit_customers,
+    true,
+  );
   await owner
     .getByRole("button", { name: "Zugang deaktivieren", exact: true })
     .first()

@@ -34,6 +34,7 @@ jobs:
           node --input-type=module -e 'for(let n=0;n<100;n++){try{if((await fetch("http://localhost:4173")).ok)process.exit(0)}catch{}await new Promise(r=>setTimeout(r,100))}process.exit(1)'
           npm run test:browser
           npm run test:team-browser
+          npm run test:practical-browser
           node scripts/install-check.mjs
       - uses: actions/upload-artifact@v4
         with:

@@ -1,6 +1,6 @@
 {
   "name": "heimfriseur",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -11,7 +11,10 @@
     "test:browser": "node scripts/browser-check.mjs",
     "preview": "vite preview --host 0.0.0.0",
     "format": "prettier --write src tests scripts *.json vite.config.ts",
-    "test:team-browser": "node scripts/team-browser-check.mjs"
+    "test:team-browser": "node scripts/team-browser-check.mjs",
+    "prebuild": "node scripts/prepare-ocr.mjs",
+    "predev": "node scripts/prepare-ocr.mjs",
+    "test:practical-browser": "node scripts/practical-browser-check.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.57.0",
@@ -19,10 +22,12 @@
     "jspdf-autotable": "^5.0.0",
     "lucide-react": "^0.468.0",
     "react": "^19.1.0",
-    "react-dom": "^19.1.0"
+    "react-dom": "^19.1.0",
+    "tesseract.js": "^6.0.1"
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.8",
+    "@tesseract.js-data/deu": "^1.0.0",
     "@types/node": "^26.6.4",
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",

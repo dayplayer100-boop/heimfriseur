@@ -1,8 +1,8 @@
-# HeimFriseur – aktuelle Team-Version 2.0
+# HeimFriseur – Version 3.0
 
-Die bestehende Website und PWA ist um Geschäftsführer-/Mitarbeiterzugänge, sichere Einladungen, Besuchszuordnung, Autosave und protokollierte Korrekturen erweitert. Vollständige Rechteübersicht, Aktualisierungsschritte und Grenzen stehen in [TEAM-UPDATE.md](TEAM-UPDATE.md).
+Die bestehende Team-App enthält jetzt flexible Heim- und Kundenrhythmen, Untergruppen, Heimpreise, Zahlungsdokumentation, konfigurierbare Mitarbeiterrechte, lokalen Fotoimport, Einführung und Feedback. Anleitung und Grenzen: [PRACTICAL-UPDATE.md](PRACTICAL-UPDATE.md). Die Team-Grundlage ist in [TEAM-UPDATE.md](TEAM-UPDATE.md) dokumentiert.
 
-**Bestehendes Projekt:** Nur Migration `002_team.sql` ausführen, anschließend bauen und auf die vorhandene Hosting-Site veröffentlichen. **Neue Datenbank:** `001_heimfriseur.sql` und danach `002_team.sql` ausführen. Vorher Daten sichern. Die Erweiterung wurde lokal geprüft; Live-Migration und Firebase-Deployment erfolgen separat.
+**Bestehende Datenbank:** Migration 002 nur falls noch nicht installiert; anschließend 003 einmal ausführen. **Neue Datenbank:** 001, 002 und 003 in dieser Reihenfolge. Bereits ausgeführte Migrationen niemals wiederholen. Danach `npm ci`, `npm run build` und vorhandene Firebase-Site aktualisieren. Ausgabeordner: `dist`.
 
 # HeimFriseur – Version 1
 

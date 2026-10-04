@@ -9,7 +9,13 @@ import {
 import type { User } from "@supabase/supabase-js";
 import { supabase } from "./supabase";
 import { DemoRepository } from "./demo";
-import { emptyData, type Data, type Table, type TeamContext } from "./types";
+import {
+  emptyData,
+  type Data,
+  type Table,
+  type TeamContext,
+  type Permission,
+} from "./types";
 export function friendly(e: unknown) {
   const x = e as { message?: string; code?: string };
   if (x.code === "23503")
@@ -37,6 +43,7 @@ export function friendly(e: unknown) {
 }
 interface Store {
   team: TeamContext | null;
+  can: (permission: Permission) => boolean;
   isOwner: boolean;
   actorId: string;
   setNavigationGuard: (guard: (() => Promise<boolean>) | null) => void;
@@ -287,6 +294,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         data,
         team,
         isOwner: demo || team?.membership.role === "owner",
+        can: (permission) =>
+          demo ||
+          team?.membership.role === "owner" ||
+          (team?.membership.permissions?.[permission] ??
+            ["record_payments", "close_visits"].includes(permission)),
         actorId: demo ? "demo" : user?.id || "",
         setNavigationGuard: (guard) => {
           navigationGuard.current = guard;

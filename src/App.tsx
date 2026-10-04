@@ -1,3 +1,4 @@
+import { Assistance } from "./Assistance";
 import { AppUpdate } from "./AppUpdate";
 import { TeamInvite, EmployeeCustomer } from "./Team";
 import { InstallAppButton } from "./InstallApp";
@@ -60,6 +61,7 @@ export function App() {
     logout,
     isOwner,
     team,
+    can,
   } = store;
   const visibleNavigation = isOwner
     ? navigation
@@ -71,6 +73,7 @@ export function App() {
       row?: Row;
       preset?: Record<string, string>;
       group?: string;
+      facility?: string;
     } | null>(null),
     [online, setOnline] = useState(navigator.onLine),
     [recovery, setRecovery] = useState(
@@ -105,15 +108,13 @@ export function App() {
     location.hash = p;
   };
   const edit = (table: Table, row?: Row, preset?: Record<string, string>) =>
-    isOwner && setModal({ type: "edit", table, row, preset });
-  const plan = (group?: string) => {
+    (isOwner ||
+      (table === "customers" &&
+        can(row ? "edit_customers" : "add_customers"))) &&
+    setModal({ type: "edit", table, row, preset });
+  const plan = (group?: string, facility?: string) => {
     if (!isOwner) return;
-    if (!data.groups.length) {
-      setError("Lege zuerst eine Einrichtung und einen Wohnbereich an.");
-      navigate("facilities");
-      return;
-    }
-    setModal({ type: "plan", group });
+    setModal({ type: "plan", group, facility });
   };
   const confirmDelete = (table: Table, row: Row) =>
     isOwner && setModal({ type: "delete", table, row });
@@ -242,7 +243,7 @@ export function App() {
         break;
       case "customer":
         content = !isOwner ? (
-          <EmployeeCustomer id={id} />
+          <EmployeeCustomer id={id} edit={edit} />
         ) : (
           <CustomerDetail
             key={id}
@@ -412,6 +413,7 @@ export function App() {
       ) : (
         content
       )}
+      <Assistance />
       {error && (
         <div className="toast error" role="alert">
           <AlertCircle size={20} />
@@ -441,9 +443,10 @@ export function App() {
               setModal(null);
               if (visitId) {
                 const ok = await run(async () => {
-                  await rpc("add_visit_customer", {
+                  await rpc("add_customer_to_visit", {
                     p_appointment: visitId,
                     p_customer: newId,
+                    p_entry_type: "Spontan",
                   });
                   return true;
                 });
@@ -459,6 +462,7 @@ export function App() {
       {modal?.type === "plan" && (
         <Modal title="Besuch planen" onClose={() => setModal(null)}>
           <VisitForm
+            facilityId={modal.facility}
             groupId={modal.group}
             onDone={(id) => {
               setModal(null);

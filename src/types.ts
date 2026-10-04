@@ -19,6 +19,10 @@ export interface Profile extends Base {
   logo_url: string;
 }
 export interface Facility extends Base {
+  visit_recurrence_weeks?: number;
+  preferred_weekday?: number;
+  preferred_start_time?: string;
+  is_provisional?: boolean;
   name: string;
   street: string;
   house_number: string;
@@ -31,6 +35,7 @@ export interface Facility extends Base {
   notes: string;
 }
 export interface Group extends Base {
+  is_general?: boolean;
   facility_id: string;
   name: string;
   recurrence_weeks: number;
@@ -39,6 +44,10 @@ export interface Group extends Base {
   notes: string;
 }
 export interface Customer extends Base {
+  recurrence_weeks?: number | null;
+  next_due_date?: string | null;
+  cohort_id?: string | null;
+  hair_request?: "Ja" | "Nein" | "Unbekannt";
   facility_id: string;
   group_id: string;
   first_name: string;
@@ -59,6 +68,9 @@ export interface DefaultService extends Base {
   service_id: string;
 }
 export interface Appointment extends Base {
+  auto_include_due?: boolean;
+  all_groups?: boolean;
+  cohort_id?: string | null;
   facility_id: string;
   group_id: string;
   appointment_date: string;
@@ -71,6 +83,8 @@ export interface Appointment extends Base {
   actual_end_time: string | null;
 }
 export interface Member extends Base {
+  entry_type?: string;
+  followup_date?: string | null;
   appointment_id: string;
   customer_id: string;
   status: string;
@@ -113,7 +127,67 @@ export interface Formula extends Base {
   notes: string;
   formula_date: string;
 }
+export interface Cohort extends Base {
+  facility_id: string;
+  group_id: string;
+  name: string;
+  recurrence_weeks: number;
+  anchor_date: string;
+}
+export interface FacilityPrice extends Base {
+  facility_id: string;
+  service_id: string;
+  price: number;
+}
+export interface PaymentMethod extends Base {
+  name: string;
+  is_active: boolean;
+}
+export interface Billing extends Base {
+  customer_id: string;
+  billing_name: string;
+  street: string;
+  postal_code: string;
+  city: string;
+  phone: string;
+  email: string;
+  payment_method_id: string | null;
+  delivery: string;
+}
+export interface Payment extends Base {
+  treatment_id: string;
+  payment_method_id: string | null;
+  method_name_snapshot: string;
+  status: string;
+  delivery: string;
+  billing_name_snapshot: string;
+  billing_address_snapshot: string;
+  amount: number;
+  recorded_by: string;
+  recorded_at: string;
+}
+export interface Feedback extends Base {
+  created_by: string;
+  category: string;
+  message: string;
+  route: string;
+  status: string;
+}
+export type Permission =
+  | "edit_customers"
+  | "add_customers"
+  | "edit_schedule"
+  | "override_prices"
+  | "record_payments"
+  | "view_billing"
+  | "close_visits";
 export interface Data {
+  cohorts: Cohort[];
+  facility_service_prices: FacilityPrice[];
+  payment_methods: PaymentMethod[];
+  customer_billing: Billing[];
+  treatment_payments: Payment[];
+  feedback: Feedback[];
   profiles: Profile[];
   facilities: Facility[];
   groups: Group[];
@@ -129,6 +203,12 @@ export interface Data {
 export type Table = keyof Data;
 export type Row = Data[Table][number];
 export const emptyData = (): Data => ({
+  cohorts: [],
+  facility_service_prices: [],
+  payment_methods: [],
+  customer_billing: [],
+  treatment_payments: [],
+  feedback: [],
   profiles: [],
   facilities: [],
   groups: [],
@@ -148,6 +228,8 @@ export interface TeamMember {
   user_id: string;
   role: "owner" | "employee";
   display_name: string;
+  permissions?: Partial<Record<Permission, boolean>>;
+  onboarding_completed?: boolean;
   is_active: boolean;
 }
 export interface Assignment {

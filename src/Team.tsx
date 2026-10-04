@@ -1,9 +1,14 @@
+import { PermissionsEditor } from "./TeamPermissions";
+import { BillingEditor } from "./Payments";
+import type { Edit } from "./Records";
 import { useState } from "react";
 import { useStore } from "./store";
 import { Button, Input, Modal, Title, Empty } from "./ui";
 import { euro, minutes, dateLabel, fullName } from "./domain";
 
 const actionLabels: Record<string, string> = {
+  permissions_changed: "Berechtigungen geändert",
+  payment_recorded: "Zahlung erfasst",
   invite_created: "Einladung erstellt",
   invite_revoked: "Einladung widerrufen",
   invite_accepted: "Einladung angenommen",
@@ -68,6 +73,7 @@ export function TeamInvite() {
 }
 export function TeamSettings() {
   const { team, demo, rpc, run, setNotify, data } = useStore();
+  const [permissionMember, setPermissionMember] = useState<string | null>(null);
   const [email, setEmail] = useState(""),
     [link, setLink] = useState(""),
     [confirm, setConfirm] = useState<string | null>(null);
@@ -98,9 +104,17 @@ export function TeamSettings() {
               </p>
             </div>
             {m.role === "employee" && (
-              <Button variant="secondary" onClick={() => setConfirm(m.id)}>
-                {m.is_active ? "Zugang deaktivieren" : "Aktivieren"}
-              </Button>
+              <div className="button-group">
+                <Button
+                  variant="secondary"
+                  onClick={() => setPermissionMember(m.id)}
+                >
+                  Berechtigungen
+                </Button>
+                <Button variant="secondary" onClick={() => setConfirm(m.id)}>
+                  {m.is_active ? "Zugang deaktivieren" : "Aktivieren"}
+                </Button>
+              </div>
             )}
           </div>
         ))}
@@ -225,6 +239,12 @@ export function TeamSettings() {
           <p className="muted">Noch keine Teamänderungen.</p>
         )}
       </section>
+      {permissionMember && (
+        <PermissionsEditor
+          member={team.members.find((m) => m.id === permissionMember)!}
+          onClose={() => setPermissionMember(null)}
+        />
+      )}
       {changeMember && (
         <Modal
           title={
@@ -402,8 +422,8 @@ export function CorrectionEditor({
     </Modal>
   );
 }
-export function EmployeeCustomer({ id }: { id: string }) {
-  const { data } = useStore();
+export function EmployeeCustomer({ id, edit }: { id: string; edit: Edit }) {
+  const { data, can } = useStore();
   const c = data.customers.find((c) => c.id === id);
   if (!c) return <Empty title="Kunde nicht zugewiesen" />;
   return (
@@ -412,6 +432,12 @@ export function EmployeeCustomer({ id }: { id: string }) {
         title={fullName(c)}
         description={"Zimmer " + (c.room_number || "–")}
       />
+      {can("edit_customers") && (
+        <Button onClick={() => edit("customers", c)}>
+          Kundendaten bearbeiten
+        </Button>
+      )}
+      <BillingEditor customerId={id} />
       <section className="panel">
         <h2>Behandlungshistorie</h2>
         {data.treatments

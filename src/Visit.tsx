@@ -1,3 +1,5 @@
+import { visitArea } from "./domain";
+import { PaymentDialog } from "./Payments";
 import { useAutosave } from "./useAutosave";
 import { AssignmentEditor, CorrectionEditor } from "./Team";
 import { useEffect, useState } from "react";
@@ -33,6 +35,8 @@ import {
   fullName,
   visitStats,
   customerDefaults,
+  addWeeks,
+  effectivePrice,
 } from "./domain";
 
 import { FormulaFields, formulaFields } from "./Forms";
@@ -46,10 +50,26 @@ export function Visit({
   navigate: (p: string) => void;
   edit: Edit;
 }) {
-  const { data, rpc, run, setNotify, isOwner, team, actorId } = useStore();
-  const [dialog, setDialog] = useState(""),
+  const { data, rpc, run, setNotify, isOwner, team, actorId, can } = useStore();
+  const [dialog, setDialog] = useState(() => {
+      const pending = sessionStorage.getItem("heimfriseur-payment-prompt");
+      return pending &&
+        data.treatments.some((t) => t.id === pending && t.appointment_id === id)
+        ? "payment/" + pending
+        : "";
+    }),
     [member, setMember] = useState(""),
-    [reason, setReason] = useState("Nicht anwesend");
+    [reason, setReason] = useState("Nicht anwesend"),
+    [entryType, setEntryType] = useState("Spontan"),
+    [nextDate, setNextDate] = useState(
+      addWeeks(
+        data.appointments.find((a) => a.id === id)?.appointment_date || today(),
+        data.facilities.find(
+          (f) =>
+            f.id === data.appointments.find((a) => a.id === id)?.facility_id,
+        )?.visit_recurrence_weeks || 1,
+      ),
+    );
   const a = data.appointments.find((a) => a.id === id);
   if (!a) return <Empty title="Besuch nicht gefunden" />;
   const s = visitStats(data, a),
@@ -63,10 +83,11 @@ export function Visit({
   );
   const canClose =
     isOwner ||
-    team?.assignments.some(
-      (x) =>
-        x.appointment_id === id && x.user_id === actorId && x.is_responsible,
-    );
+    (can("close_visits") &&
+      team?.assignments.some(
+        (x) =>
+          x.appointment_id === id && x.user_id === actorId && x.is_responsible,
+      ));
   const editable = !["Abgeschlossen", "Abgesagt"].includes(a.status);
   return (
     <>
@@ -77,11 +98,11 @@ export function Visit({
       <Title
         eyebrow="DEIN BESUCH"
         title={f?.name || "Besuch"}
-        description={`${g?.name} · ${dateLabel(a.appointment_date)} · ${a.start_time.slice(0, 5)} Uhr`}
+        description={`${visitArea(data, a)} · ${dateLabel(a.appointment_date)} · ${a.start_time.slice(0, 5)} Uhr`}
         action={
           <div className="button-group">
             <Status status={a.status} />
-            {isOwner && (
+            {(isOwner || can("edit_schedule")) && (
               <button
                 aria-label="Besuchsaktionen"
                 className="icon-button"
@@ -178,7 +199,7 @@ export function Visit({
                 {m.status === "Erledigt" ? (
                   <CheckCircle2 size={22} />
                 ) : (
-                  c.first_name[0] + c.last_name[0]
+                  (c.first_name?.[0] || "?") + (c.last_name?.[0] || "")
                 )}
               </span>
               <div className="visit-customer-info">
@@ -222,6 +243,12 @@ export function Visit({
                         (x) => x.user_id === (t.performed_by || t.user_id),
                       )?.display_name || "Geschäftsführer"}
                     </span>
+                  )}
+                  {m.entry_type && m.entry_type !== "Regulär" && (
+                    <span className="entry-tag">{m.entry_type}</span>
+                  )}
+                  {m.followup_date && (
+                    <span>Nächster Termin: {dateLabel(m.followup_date)}</span>
                   )}
                   {m.non_completion_reason && (
                     <span>{m.non_completion_reason}</span>
@@ -271,6 +298,17 @@ export function Visit({
                       onClick={() => setDialog("takeover/" + t.id)}
                     >
                       Behandlung übernehmen
+                    </Button>
+                  )}
+                {m.status === "Erledigt" &&
+                  t &&
+                  can("record_payments") &&
+                  (isOwner || (t.performed_by || t.user_id) === actorId) && (
+                    <Button
+                      variant="secondary"
+                      onClick={() => setDialog("payment/" + t.id)}
+                    >
+                      Zahlung / Abrechnung
                     </Button>
                   )}
                 {m.status === "Erledigt" && t && isOwner && (
@@ -364,12 +402,23 @@ export function Visit({
           </Button>
         </Modal>
       )}
+      {dialog.startsWith("payment/") && can("record_payments") && (
+        <PaymentDialog
+          treatmentId={dialog.split("/")[1]}
+          onClose={() => {
+            sessionStorage.removeItem("heimfriseur-payment-prompt");
+            setDialog("");
+          }}
+        />
+      )}
       {dialog === "skip" && (
         <Modal title="Nicht durchgeführt" onClose={() => setDialog("")}>
           <p>Warum kann die Behandlung heute nicht stattfinden?</p>
           <Field label="Grund">
             <select value={reason} onChange={(e) => setReason(e.target.value)}>
               {[
+                "Krank",
+                "Nicht vor Ort",
                 "Möchte heute nicht",
                 "Nicht anwesend",
                 "Krankenhaus",
@@ -381,12 +430,26 @@ export function Visit({
               ))}
             </select>
           </Field>
+          <Input
+            label="Wann ist der nächste Behandlungstermin?"
+            type="date"
+            value={nextDate}
+            onChange={setNextDate}
+          />
+          <Button variant="secondary" onClick={() => setNextDate("")}>
+            Termin noch offen lassen
+          </Button>
+          <p className="muted">
+            Der Kunde bleibt erhalten. Das Datum bestimmt, ab wann er wieder für
+            einen Besuch fällig ist.
+          </p>
           <Button
             onClick={async () => {
               const ok = await run(async () => {
-                await rpc("skip_customer", {
+                await rpc("skip_customer_followup", {
                   p_member: member,
                   p_reason: reason,
+                  p_next_date: nextDate || null,
                 });
                 return true;
               });
@@ -405,11 +468,23 @@ export function Visit({
           title="Kunde zum Besuch hinzufügen"
           onClose={() => setDialog("")}
         >
+          <Field label="Anlass">
+            <select
+              value={entryType}
+              onChange={(e) => setEntryType(e.target.value)}
+            >
+              <option>Spontan</option>
+              <option>Vorgezogen</option>
+              <option>Nachgeholt</option>
+            </select>
+          </Field>
           <div className="add-customer-list">
             {data.customers
               .filter(
                 (c) =>
-                  c.group_id === a.group_id &&
+                  c.facility_id === a.facility_id &&
+                  (a.all_groups || c.group_id === a.group_id) &&
+                  c.hair_request !== "Nein" &&
                   !members.some((m) => m.customer_id === c.id),
               )
               .map((c) => (
@@ -418,9 +493,10 @@ export function Visit({
                   className="list-row"
                   onClick={async () => {
                     const ok = await run(async () => {
-                      await rpc("add_visit_customer", {
+                      await rpc("add_customer_to_visit", {
                         p_appointment: id,
                         p_customer: c.id,
+                        p_entry_type: entryType,
                       });
                       return true;
                     });
@@ -434,7 +510,7 @@ export function Visit({
                 </button>
               ))}
           </div>
-          {isOwner && (
+          {can("add_customers") && (
             <Button
               onClick={() => {
                 setDialog("");
@@ -532,16 +608,25 @@ export function Visit({
                 <Button variant="secondary" onClick={() => setDialog("move")}>
                   Termin verschieben
                 </Button>
-                <Button variant="secondary" onClick={() => setDialog("cancel")}>
-                  Besuch absagen
-                </Button>
+                {isOwner && (
+                  <Button
+                    variant="secondary"
+                    onClick={() => setDialog("cancel")}
+                  >
+                    Besuch absagen
+                  </Button>
+                )}
               </>
             )}
-            {!data.treatments.some((t) => t.appointment_id === id) && (
-              <Button variant="danger-text" onClick={() => setDialog("delete")}>
-                Termin löschen
-              </Button>
-            )}
+            {isOwner &&
+              !data.treatments.some((t) => t.appointment_id === id) && (
+                <Button
+                  variant="danger-text"
+                  onClick={() => setDialog("delete")}
+                >
+                  Termin löschen
+                </Button>
+              )}
             <Button variant="secondary" onClick={() => setDialog("")}>
               Zurück
             </Button>
@@ -586,7 +671,7 @@ export function Visit({
             <Field label="Was möchtest du ändern?">
               <select name="scope">
                 <option value="single">Nur diesen Termin</option>
-                {a.recurrence_series_id && (
+                {isOwner && a.recurrence_series_id && (
                   <option value="future">Diesen und zukünftige Termine</option>
                 )}
               </select>
@@ -646,6 +731,7 @@ export function TreatmentView({
     setNotify,
     setError,
     isOwner,
+    can,
     actorId,
     setNavigationGuard,
   } = useStore();
@@ -687,7 +773,7 @@ export function TreatmentView({
     async (next, finish) => {
       const m = Number(next.material.replace(",", ".")),
         p =
-          next.price === "" || !isOwner
+          next.price === "" || !can("override_prices")
             ? null
             : Number(next.price.replace(",", "."));
       if (
@@ -735,8 +821,7 @@ export function TreatmentView({
       n +
       Number(
         snapshots.find((s) => s.service_id === id)?.price_snapshot ??
-          data.services.find((s) => s.id === id)?.price ??
-          0,
+          effectivePrice(data, id, c.facility_id),
       ),
     0,
   );
@@ -775,6 +860,8 @@ export function TreatmentView({
         setNotify(
           `${fullName(c)} abgeschlossen · ${euro(price === "" ? total : Number(price.replace(",", ".")))} · ${minutes(elapsed / 60)}`,
         );
+        if (can("record_payments"))
+          sessionStorage.setItem("heimfriseur-payment-prompt", id);
         navigate("visit/" + a.id);
       } else setNotify("Zwischenstand gespeichert");
     } else
@@ -878,7 +965,8 @@ export function TreatmentView({
                 <strong>
                   {euro(
                     snapshots.find((x) => x.service_id === s.id)
-                      ?.price_snapshot ?? s.price,
+                      ?.price_snapshot ??
+                      effectivePrice(data, s.id, c.facility_id),
                   )}
                 </strong>
               </label>
@@ -933,7 +1021,7 @@ export function TreatmentView({
             <span>Berechneter Preis</span>
             <strong>{euro(total)}</strong>
           </div>
-          {isOwner && (
+          {can("override_prices") && (
             <>
               <Input
                 label="Manueller Endpreis (€)"

@@ -7,3 +7,5 @@ dist/
 .firebase/
 firebase-debug*.log
 *service-account*.json
+
+public/ocr/

@@ -62,12 +62,31 @@ await page
   .getByRole("button", { name: "Behandlung beenden", exact: true })
   .click();
 await page.getByRole("heading", { name: "Kundenliste" }).waitFor();
+await page
+  .getByLabel("Name Rechnungsempfänger / Ansprechpartner")
+  .fill("Fiktiver Betreuer");
+await page
+  .getByRole("button", { name: "Abrechnung speichern", exact: true })
+  .click();
+await page
+  .getByText("Abrechnungskontakt gespeichert", { exact: true })
+  .waitFor();
+await page
+  .getByLabel("Zahlungsart", { exact: true })
+  .selectOption({ label: "Barzahlung" });
+await page
+  .getByRole("button", { name: "Zahlung speichern", exact: true })
+  .click();
 await page.getByRole("button", { name: "Start", exact: true }).first().click();
 await page.getByRole("timer").waitFor();
 await page
   .getByRole("button", { name: "Behandlung beenden", exact: true })
   .click();
+await page
+  .getByRole("button", { name: "Später erfassen", exact: true })
+  .click();
 await page.getByRole("button", { name: /nicht durchgeführt/ }).click();
+await page.getByLabel("Grund", { exact: true }).selectOption("Krank");
 await page.getByRole("button", { name: "Speichern", exact: true }).click();
 await page
   .getByText("Als nicht durchgeführt markiert", { exact: true })
@@ -97,6 +116,20 @@ assert.equal(
   "Abgeschlossen",
 );
 assert.equal(db.treatments.filter((t) => t.end_time).length, 2);
+assert.equal(db.treatment_payments[0].status, "Bezahlt");
+assert.equal(
+  db.treatment_payments[0].billing_name_snapshot,
+  "Fiktiver Betreuer",
+);
+assert.equal(
+  db.appointment_customers.find((m) => m.status === "Nicht durchgeführt")
+    .non_completion_reason,
+  "Krank",
+);
+assert.ok(
+  db.appointment_customers.find((m) => m.status === "Nicht durchgeführt")
+    .followup_date,
+);
 assert.equal(
   db.appointments.filter((a) => a.recurrence_series_id === "series1").length,
   2,
@@ -114,18 +147,18 @@ assert.equal(
 );
 await page.goto(base + "/#facilities");
 await page.getByRole("button", { name: "Einrichtung", exact: true }).click();
-await page.getByLabel("Name *", { exact: true }).fill("Testeinrichtung");
+await page.getByLabel("Name", { exact: true }).fill("Testeinrichtung");
 await page.getByRole("button", { name: "Speichern", exact: true }).click();
 await page
   .getByRole("heading", { name: "Testeinrichtung", exact: true })
   .waitFor();
 await page.getByRole("button", { name: "Wohnbereich", exact: true }).click();
-await page.getByLabel("Gruppenname *", { exact: true }).fill("Testgruppe");
+await page.getByLabel("Gruppenname", { exact: true }).fill("Testgruppe");
 await page.getByRole("button", { name: "Speichern", exact: true }).click();
 await page.getByRole("heading", { name: "Testgruppe", exact: true }).waitFor();
 await page.getByRole("button", { name: "Kunde", exact: true }).click();
-await page.getByLabel("Vorname *", { exact: true }).fill("Test");
-await page.getByLabel("Nachname *", { exact: true }).fill("Person");
+await page.getByLabel("Vorname", { exact: true }).fill("Test");
+await page.getByLabel("Nachname", { exact: true }).fill("Person");
 await page.getByRole("checkbox", { name: /Herrenhaarschnitt/ }).check();
 await page.getByRole("button", { name: "Speichern", exact: true }).click();
 await page.getByText("Test Person", { exact: true }).waitFor();

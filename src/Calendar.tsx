@@ -1,3 +1,4 @@
+import { visitArea } from "./domain";
 import { useState } from "react";
 import { ChevronLeft, ChevronRight, CalendarDays } from "lucide-react";
 import { useStore } from "./store";
@@ -137,7 +138,7 @@ export function Calendar({
                   {data.facilities.find((f) => f.id === a.facility_id)?.name}
                 </h3>
                 <p>
-                  {data.groups.find((g) => g.id === a.group_id)?.name} ·{" "}
+                  {visitArea(data, a)} ·{" "}
                   {
                     data.appointment_customers.filter(
                       (m) => m.appointment_id === a.id,
@@ -188,9 +189,7 @@ export function Calendar({
                           ?.name
                       }
                     </span>
-                    <small>
-                      {data.groups.find((g) => g.id === a.group_id)?.name}
-                    </small>
+                    <small>{visitArea(data, a)}</small>
                   </button>
                 ))}
             </div>

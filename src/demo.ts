@@ -5,7 +5,7 @@ import {
   type Row,
   type Appointment,
 } from "./types";
-import { today, addWeeks } from "./domain";
+import { today, addWeeks, customerDue, effectivePrice } from "./domain";
 const uid = "demo";
 const base = (id: string = crypto.randomUUID()) => ({
   id,
@@ -150,21 +150,35 @@ export function demoSeed(): Data {
       sort_order: i,
     }),
   );
+  d.payment_methods = [
+    { ...base("pay-cash"), name: "Barzahlung", is_active: true },
+    { ...base("pay-bank"), name: "Überweisung", is_active: true },
+    { ...base("pay-home"), name: "Heimkonto", is_active: true },
+  ];
   return d;
 }
 export class DemoRepository {
   data: Data;
   constructor() {
-    this.data =
-      JSON.parse(sessionStorage.getItem("heimfriseur-demo") || "null") ||
-      demoSeed();
+    this.data = {
+      ...emptyData(),
+      ...(JSON.parse(sessionStorage.getItem("heimfriseur-demo") || "null") ||
+        demoSeed()),
+    };
+    if (!this.data.payment_methods.length)
+      this.data.payment_methods = demoSeed().payment_methods;
   }
   persist() {
     sessionStorage.setItem("heimfriseur-demo", JSON.stringify(this.data));
   }
   save(table: Table, input: Record<string, unknown>) {
     const rows = this.data[table] as Row[];
-    const row = { ...base(), ...input } as Row;
+    const row = {
+      ...base(),
+      ...Object.fromEntries(
+        Object.entries(input).filter(([, v]) => v !== undefined),
+      ),
+    } as Row;
     const idx = rows.findIndex((x) => x.id === row.id);
     if (idx >= 0) rows[idx] = { ...rows[idx], ...row };
     else rows.push(row);
@@ -198,8 +212,61 @@ export class DemoRepository {
       return a;
     };
     switch (name) {
-      case "save_customer":
-        result = this.save("customers", p.p_data);
+      case "save_group_flexible": {
+        const input = { ...p.p_data };
+        if (!input.facility_id) {
+          const c = await this.rpc("save_customer", {
+            p_data: {},
+            p_services: [],
+          });
+          input.facility_id = d.customers.find((k) => k.id === c)!.facility_id;
+          d.customers = d.customers.filter((k) => k.id !== c);
+        }
+        result = this.save("groups", {
+          ...input,
+          name: input.name || "Wohnbereich (Name noch offen)",
+        });
+        break;
+      }
+      case "save_customer": {
+        const input = { ...p.p_data };
+        if (!input.facility_id) {
+          let f = d.facilities.find((f) => f.is_provisional);
+          if (!f) {
+            const fid = this.save("facilities", {
+              name: "Einrichtung noch offen",
+              is_provisional: true,
+            });
+            f = d.facilities.find((f) => f.id === fid)!;
+          }
+          input.facility_id = f.id;
+        }
+        if (!input.group_id) {
+          let g = d.groups.find(
+            (g) => g.facility_id === input.facility_id && g.is_general,
+          );
+          if (!g) {
+            const gid = this.save("groups", {
+              facility_id: input.facility_id,
+              name: "Allgemein / später zuordnen",
+              is_general: true,
+              recurrence_weeks: 5,
+              preferred_weekday: 2,
+              preferred_start_time: "09:00",
+            });
+            g = d.groups.find((g) => g.id === gid)!;
+          }
+          input.group_id = g.id;
+        }
+        result = this.save("customers", {
+          first_name: "",
+          last_name: "",
+          room_number: "",
+          status: "Aktiv",
+          hair_request: "Unbekannt",
+          notes: "",
+          ...input,
+        });
         d.customer_default_services = d.customer_default_services.filter(
           (x) => x.customer_id !== result,
         );
@@ -211,6 +278,58 @@ export class DemoRepository {
           }),
         );
         break;
+      }
+      case "plan_visit_flexible": {
+        let g = d.groups.find((g) => g.id === p.p_group);
+        if (!g) {
+          const fid =
+            p.p_facility ||
+            d.facilities[0]?.id ||
+            this.save("facilities", { name: "Einrichtung noch offen" });
+          g = d.groups.find((g) => g.facility_id === fid && g.is_general);
+          if (!g) {
+            const gid = this.save("groups", {
+              facility_id: fid,
+              name: "Allgemein / später zuordnen",
+              recurrence_weeks: 5,
+              preferred_start_time: "09:00",
+              preferred_weekday: 2,
+              is_general: true,
+            });
+            g = d.groups.find((g) => g.id === gid)!;
+          }
+        }
+        result = await this.rpc("plan_visit", {
+          ...p,
+          p_group: g.id,
+          p_series: p.p_options?.series_id,
+          p_all: false,
+        });
+        const a = getA(result);
+        a.auto_include_due = p.p_all;
+        a.all_groups = !p.p_group || p.p_options?.all_groups;
+        a.cohort_id = p.p_options?.cohort_id;
+        if (p.p_all)
+          d.customers
+            .filter(
+              (c) =>
+                c.facility_id === a.facility_id &&
+                (a.all_groups || c.group_id === a.group_id) &&
+                (!a.cohort_id || c.cohort_id === a.cohort_id) &&
+                customerDue(d, c, a.appointment_date),
+            )
+            .forEach((c, i) =>
+              d.appointment_customers.push({
+                ...base(),
+                appointment_id: a.id,
+                customer_id: c.id,
+                status: "Offen",
+                sort_order: i,
+                entry_type: "Regulär",
+              }),
+            );
+        break;
+      }
       case "plan_visit": {
         const g = d.groups.find((g) => g.id === p.p_group)!;
         const a: Appointment = {
@@ -243,6 +362,14 @@ export class DemoRepository {
         result = a.id;
         break;
       }
+      case "add_customer_to_visit":
+        await this.rpc("add_visit_customer", p);
+        d.appointment_customers.find(
+          (m) =>
+            m.appointment_id === p.p_appointment &&
+            m.customer_id === p.p_customer,
+        )!.entry_type = p.p_entry_type || "Spontan";
+        break;
       case "add_visit_customer":
         if (
           !d.appointment_customers.some(
@@ -301,10 +428,10 @@ export class DemoRepository {
                 treatment_id: t.id,
                 service_id: s.id,
                 service_name_snapshot: s.name,
-                price_snapshot: s.price,
+                price_snapshot: effectivePrice(d, s.id, a.facility_id),
                 duration_minutes_snapshot: s.duration_minutes,
               });
-              t.total_price += s.price;
+              t.total_price += effectivePrice(d, s.id, a.facility_id);
             }
           });
         m.status = "In Behandlung";
@@ -336,7 +463,11 @@ export class DemoRepository {
               treatment_id: t.id,
               service_id: id,
               service_name_snapshot: s.name,
-              price_snapshot: s.price,
+              price_snapshot: effectivePrice(
+                d,
+                s.id,
+                getA(t.appointment_id).facility_id,
+              ),
               duration_minutes_snapshot: s.duration_minutes,
             });
           }
@@ -362,6 +493,14 @@ export class DemoRepository {
           });
         }
         if (p.p_finish) {
+          const c = d.customers.find((c) => c.id === t.customer_id)!;
+          c.next_due_date = addWeeks(
+            getA(t.appointment_id).appointment_date,
+            c.recurrence_weeks ||
+              d.cohorts.find((g) => g.id === c.cohort_id)?.recurrence_weeks ||
+              d.groups.find((g) => g.id === c.group_id)?.recurrence_weeks ||
+              5,
+          );
           t.end_time = new Date().toISOString();
           t.duration_minutes =
             (Date.now() - new Date(t.start_time).getTime()) / 60000;
@@ -372,6 +511,89 @@ export class DemoRepository {
         result = t.id;
         break;
       }
+      case "skip_customer_followup": {
+        await this.rpc("skip_customer", p);
+        const m = d.appointment_customers.find((m) => m.id === p.p_member)!;
+        m.followup_date = p.p_next_date;
+        d.customers.find((c) => c.id === m.customer_id)!.next_due_date =
+          p.p_next_date;
+        break;
+      }
+      case "set_facility_price": {
+        const old = d.facility_service_prices.find(
+          (s) => s.facility_id === p.p_facility && s.service_id === p.p_service,
+        );
+        if (p.p_price === null) {
+          d.facility_service_prices = d.facility_service_prices.filter(
+            (s) => s.id !== old?.id,
+          );
+        } else
+          this.save("facility_service_prices", {
+            id: old?.id || crypto.randomUUID(),
+            facility_id: p.p_facility,
+            service_id: p.p_service,
+            price: p.p_price,
+          });
+        break;
+      }
+      case "save_cohort":
+        result = this.save("cohorts", p.p_data);
+        break;
+      case "save_payment_method":
+        result = this.save("payment_methods", {
+          id: p.p_id || crypto.randomUUID(),
+          name: p.p_name,
+          is_active: p.p_active ?? true,
+        });
+        break;
+      case "save_billing": {
+        const old = d.customer_billing.find(
+          (b) => b.customer_id === p.p_customer,
+        );
+        result = this.save("customer_billing", {
+          ...old,
+          ...p.p_data,
+          customer_id: p.p_customer,
+        });
+        break;
+      }
+      case "record_payment": {
+        const t = d.treatments.find((t) => t.id === p.p_treatment)!;
+        const b = d.customer_billing.find(
+          (b) => b.customer_id === t.customer_id,
+        );
+        const old = d.treatment_payments.find((x) => x.treatment_id === t.id);
+        result = this.save("treatment_payments", {
+          id: old?.id || crypto.randomUUID(),
+          treatment_id: t.id,
+          ...p.p_data,
+          method_name_snapshot:
+            d.payment_methods.find((m) => m.id === p.p_data.payment_method_id)
+              ?.name || "Noch offen",
+          billing_name_snapshot: b?.billing_name || "",
+          billing_address_snapshot: [b?.street, b?.postal_code, b?.city]
+            .filter(Boolean)
+            .join(" "),
+          amount: t.total_price,
+          recorded_by: uid,
+          recorded_at: new Date().toISOString(),
+        });
+        break;
+      }
+      case "submit_feedback":
+        result = this.save("feedback", {
+          created_by: uid,
+          category: p.p_category,
+          message: p.p_message,
+          route: p.p_route,
+          status: "Offen",
+        });
+        break;
+      case "resolve_feedback":
+        this.save("feedback", { id: p.p_id, status: "Erledigt" });
+        break;
+      case "complete_onboarding":
+        break;
       case "skip_customer": {
         const m = d.appointment_customers.find((m) => m.id === p.p_member)!;
         if (m.status !== "Offen")
@@ -402,8 +624,13 @@ export class DemoRepository {
               x.appointment_date === next,
           )?.id;
           if (!result)
-            result = await this.rpc("plan_visit", {
-              p_group: a.group_id,
+            result = await this.rpc("plan_visit_flexible", {
+              p_facility: a.facility_id,
+              p_group: a.all_groups ? null : a.group_id,
+              p_options: {
+                series_id: a.recurrence_series_id,
+                cohort_id: a.cohort_id,
+              },
               p_date: next,
               p_time: a.start_time,
               p_weeks: a.recurrence_weeks,

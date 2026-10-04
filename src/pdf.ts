@@ -1,3 +1,4 @@
+import { visitArea } from "./domain";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import type { Data, Appointment } from "./types";
@@ -53,7 +54,7 @@ export async function createReport(d: Data, a: Appointment, print = false) {
   pdf.text(f?.name || "", 16, y + 14);
   pdf.setFont("helvetica", "normal");
   pdf.text(
-    `${g?.name || ""} | ${dateLabel(a.appointment_date)} | ${a.start_time.slice(0, 5)} Uhr`,
+    `${visitArea(d, a)} | ${dateLabel(a.appointment_date)} | ${a.start_time.slice(0, 5)} Uhr`,
     16,
     y + 21,
   );

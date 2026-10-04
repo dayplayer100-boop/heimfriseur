@@ -1,3 +1,5 @@
+import { FeedbackSettings, openIntroduction } from "./Assistance";
+import { PaymentsSettings } from "./Payments";
 import { TeamSettings } from "./Team";
 import { InstallAppButton } from "./InstallApp";
 import { useState } from "react";
@@ -35,25 +37,35 @@ export function Settings({
         description="Dein Unternehmen, deine Leistungen und deine App."
       />
       <div className="tabs">
-        {(isOwner ? ["Unternehmen", "Leistungen", "Team", "App"] : ["App"]).map(
-          (t) => (
-            <button
-              key={t}
-              className={t === tab ? "active" : ""}
-              onClick={() => setTab(t)}
-            >
-              {t === "Unternehmen" ? (
-                <Building2 size={16} />
-              ) : t === "Leistungen" ? (
-                <Scissors size={16} />
-              ) : (
-                <Settings2 size={16} />
-              )}{" "}
-              {t}
-            </button>
-          ),
-        )}
+        {(isOwner
+          ? [
+              "Unternehmen",
+              "Leistungen",
+              "Team",
+              "Abrechnung",
+              "Rückmeldungen",
+              "App",
+            ]
+          : ["App"]
+        ).map((t) => (
+          <button
+            key={t}
+            className={t === tab ? "active" : ""}
+            onClick={() => setTab(t)}
+          >
+            {t === "Unternehmen" ? (
+              <Building2 size={16} />
+            ) : t === "Leistungen" ? (
+              <Scissors size={16} />
+            ) : (
+              <Settings2 size={16} />
+            )}{" "}
+            {t}
+          </button>
+        ))}
       </div>
+      {tab === "Abrechnung" && isOwner && <PaymentsSettings />}
+      {tab === "Rückmeldungen" && isOwner && <FeedbackSettings />}
       {tab === "Team" && isOwner && <TeamSettings />}
       {tab === "Unternehmen" && isOwner && (
         <section className="panel settings-panel">
@@ -115,6 +127,9 @@ export function Settings({
         <div className="detail-columns">
           <section className="panel">
             <h2>App-Einstellungen</h2>
+            <Button variant="secondary" onClick={openIntroduction}>
+              Einführung erneut ansehen
+            </Button>
             <p>
               {team?.membership.display_name} ·{" "}
               {isOwner ? "Geschäftsführer" : "Mitarbeiter"}
@@ -130,7 +145,7 @@ export function Settings({
               <dt>Sprache</dt>
               <dd>Deutsch</dd>
               <dt>Version</dt>
-              <dd>2.0 · Team</dd>
+              <dd>3.0 · Flexible Heimbesuche</dd>
             </dl>
             <p className="muted">
               Auf dem Smartphone über das Browser-Menü zum Home-Bildschirm
