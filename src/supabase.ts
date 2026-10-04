@@ -17,7 +17,23 @@ export const connection = {
 };
 export const supabase =
   connection.url && connection.key
-    ? createClient(connection.url, connection.key)
+    ? createClient(connection.url, connection.key, {
+        global: {
+          fetch: (input, init) => {
+            const headers = new Headers(init?.headers);
+            try {
+              const selection = JSON.parse(
+                sessionStorage.getItem("heimfriseur-admin-business") || "{}",
+              );
+              if (selection.businessId)
+                headers.set("x-heimfriseur-business-id", selection.businessId);
+            } catch {
+              /* A malformed local preference grants no privileges. */
+            }
+            return fetch(input, { ...init, headers });
+          },
+        },
+      })
     : null;
 export function configure(url: string, key: string) {
   url = url.trim();

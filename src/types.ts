@@ -259,3 +259,24 @@ export interface TeamContext {
     created_at: string;
   }[];
 }
+
+export interface AppAdminContext {
+  is_admin: boolean;
+  selected_business_id?: string | null;
+  businesses?: {
+    id: string;
+    name: string;
+    owner_user_id: string;
+    owner_email: string;
+  }[];
+  admins?: { user_id: string; email: string; is_active: boolean }[];
+  audit?: {
+    id: string;
+    action: string;
+    actor_id: string | null;
+    business_id: string | null;
+    target_user_id: string | null;
+    created_at: string;
+    details: Record<string, unknown>;
+  }[];
+}

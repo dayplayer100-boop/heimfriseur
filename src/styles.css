@@ -2801,3 +2801,14 @@ code {
     bottom: 24px;
   }
 }
+
+.app-admin-panel {
+  margin-bottom: 24px;
+  overflow-wrap: anywhere;
+}
+.app-admin-panel.compact h2 {
+  font-size: 18px;
+}
+.app-admin-panel.compact p {
+  margin-bottom: 12px;
+}

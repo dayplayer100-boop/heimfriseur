@@ -1,3 +1,4 @@
+import { AppAdminPanel } from "./AppAdmin";
 import { Assistance } from "./Assistance";
 import { AppUpdate } from "./AppUpdate";
 import { TeamInvite, EmployeeCustomer } from "./Team";
@@ -179,6 +180,8 @@ export function App() {
   else if (!user && !demo) content = <Auth />;
   else if (!demo && sessionStorage.getItem("heimfriseur-invite"))
     content = <TeamInvite />;
+  else if (!demo && store.appAdmin?.is_admin && !team)
+    content = <AppAdminPanel />;
   else if (!demo && !team)
     content = (
       <section className="panel">
@@ -390,7 +393,10 @@ export function App() {
               </div>
             )}
             <AppUpdate />
-            <main>{content}</main>
+            <main>
+              {store.appAdmin?.is_admin && team && <AppAdminPanel compact />}
+              {content}
+            </main>
             <footer className="app-footer">
               <Scissors size={14} />
               <span>HeimFriseur</span>

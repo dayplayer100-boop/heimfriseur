@@ -15,6 +15,7 @@ import {
   type Table,
   type TeamContext,
   type Permission,
+  type AppAdminContext,
 } from "./types";
 export function friendly(e: unknown) {
   const x = e as { message?: string; code?: string };
@@ -42,6 +43,8 @@ export function friendly(e: unknown) {
   );
 }
 interface Store {
+  appAdmin: AppAdminContext | null;
+  selectAdminBusiness: (id: string) => Promise<void>;
   team: TeamContext | null;
   can: (permission: Permission) => boolean;
   isOwner: boolean;
@@ -76,6 +79,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
     [notify, setNotify] = useState("");
+  const [appAdmin, setAppAdmin] = useState<AppAdminContext | null>(null);
   const [team, setTeam] = useState<TeamContext | null>(null);
   const navigationGuard = useRef<(() => Promise<boolean>) | null>(null);
   const repository = useRef<DemoRepository | null>(null);
@@ -120,10 +124,30 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       return;
     }
     try {
+      const adminResponse = await supabase.rpc("get_app_admin_context");
+      if (
+        adminResponse.error &&
+        !["PGRST202", "42883"].includes(adminResponse.error.code)
+      )
+        throw adminResponse.error;
+      const admin = adminResponse.error
+        ? null
+        : (adminResponse.data as AppAdminContext);
+      if (version === generation.current) setAppAdmin(admin);
+      if (admin?.is_admin && !admin.selected_business_id) {
+        if (version === generation.current) {
+          setTeam(null);
+          setData(emptyData());
+        }
+        return;
+      }
       const ctx = await supabase.rpc("get_team_context");
       if (ctx.error) throw ctx.error;
       const nextTeam = ctx.data as TeamContext;
-      if (version === generation.current) setTeam(nextTeam);
+      if (version === generation.current) {
+        if (team?.business.id !== nextTeam.business.id) setData(emptyData());
+        setTeam(nextTeam);
+      }
       if (nextTeam.membership.role === "employee") {
         const snapshot = await supabase.rpc("employee_snapshot");
         if (snapshot.error) throw snapshot.error;
@@ -184,6 +208,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     setData(emptyData());
     setTeam(null);
+    setAppAdmin(null);
+    try {
+      const selection = JSON.parse(
+        sessionStorage.getItem("heimfriseur-admin-business") || "{}",
+      );
+      if (user && selection.userId !== user.id)
+        sessionStorage.removeItem("heimfriseur-admin-business");
+    } catch {
+      sessionStorage.removeItem("heimfriseur-admin-business");
+    }
     if (
       user &&
       !demo &&
@@ -191,10 +225,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       !sessionStorage.getItem("heimfriseur-invite")
     ) {
       setLoading(true);
-      supabase.rpc("initialize_account").then(({ error }) => {
-        if (error) setError(friendly(error));
-        void refresh();
-      });
+      void (async () => {
+        const admin = await supabase!.rpc("get_app_admin_context");
+        if (!admin.data?.is_admin) {
+          const initialized = await supabase!.rpc("initialize_account");
+          if (initialized.error) setError(friendly(initialized.error));
+        }
+        await refresh();
+      })();
     } else if (!sessionStorage.getItem("heimfriseur-invite")) void refresh();
     else setLoading(false);
   }, [user?.id, demo]);
@@ -224,13 +262,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     if (!supabase || !user) throw Error("Bitte anmelden.");
     if (team?.membership.role !== "owner")
       throw Error("Nur der Geschäftsführer darf Stammdaten ändern.");
+    const ownerId = team.business.owner_user_id;
     const request = row.id
       ? supabase
           .from(table)
-          .update({ ...row, user_id: user.id })
+          .update({ ...row, user_id: ownerId })
           .eq("id", row.id)
-          .eq("user_id", user.id)
-      : supabase.from(table).insert({ ...row, user_id: user.id });
+          .eq("user_id", ownerId)
+      : supabase.from(table).insert({ ...row, user_id: ownerId });
     const result = await request.select("id").single();
     if (result.error) throw result.error;
     return result.data.id as string;
@@ -246,7 +285,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       .from(table)
       .delete()
       .eq("id", id)
-      .eq("user_id", user!.id);
+      .eq("user_id", team!.business.owner_user_id);
     if (r.error) throw r.error;
   }
   async function rpc(name: string, p: Record<string, unknown>) {
@@ -284,6 +323,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         return;
       }
     }
+    sessionStorage.removeItem("heimfriseur-admin-business");
+    setAppAdmin(null);
     setData(emptyData());
     setTeam(null);
     setUser(null);
@@ -293,6 +334,41 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       value={{
         data,
         team,
+        appAdmin,
+        selectAdminBusiness: async (id) => {
+          if (
+            !appAdmin?.is_admin ||
+            !user ||
+            !(await (navigationGuard.current?.() ?? Promise.resolve(true)))
+          )
+            return;
+          if (
+            data.treatments.some(
+              (t) => t.performed_by === user.id && !t.end_time,
+            )
+          ) {
+            setError(
+              "Bitte zuerst deine laufende Behandlung beenden, bevor du das Unternehmen wechselst.",
+            );
+            return;
+          }
+          if (id) {
+            const logged = await run(async () => {
+              await rpc("audit_admin_business_access", { p_business: id });
+              return true;
+            });
+            if (!logged) return;
+            sessionStorage.setItem(
+              "heimfriseur-admin-business",
+              JSON.stringify({ userId: user.id, businessId: id }),
+            );
+          } else sessionStorage.removeItem("heimfriseur-admin-business");
+          generation.current++;
+          setData(emptyData());
+          setTeam(null);
+          location.hash = "dashboard";
+          location.reload();
+        },
         isOwner: demo || team?.membership.role === "owner",
         can: (permission) =>
           demo ||

@@ -7,10 +7,11 @@ import assert from "node:assert/strict";
 const db = new PGlite();
 const O = "20000000-0000-0000-0000-000000000001",
   E = "20000000-0000-0000-0000-000000000002",
-  F = "20000000-0000-0000-0000-000000000003";
+  F = "20000000-0000-0000-0000-000000000003",
+  A = "20000000-0000-0000-0000-000000000004";
 const q = async (sql, args = []) => (await db.query(sql, args)).rows;
 await db.exec(
-  `create role anon;create role authenticated;create schema auth;create table auth.users(id uuid primary key,email text,email_confirmed_at timestamptz);create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;grant usage on schema public,auth to authenticated;grant execute on function auth.uid() to authenticated;insert into auth.users values('${O}','owner@test.invalid',now()),('${E}','employee@test.invalid',now()),('${F}','second@test.invalid',now());`,
+  `create role anon;create role authenticated;create schema auth;create table auth.users(id uuid primary key,email text,email_confirmed_at timestamptz);create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;grant usage on schema public,auth to authenticated;grant execute on function auth.uid() to authenticated;insert into auth.users values('${O}','owner@test.invalid',now()),('${E}','employee@test.invalid',now()),('${F}','second@test.invalid',now()),('${A}','admin@test.invalid',now());`,
 );
 await db.exec(
   readFileSync("supabase/migrations/001_heimfriseur.sql", "utf8").replace(
@@ -22,6 +23,11 @@ await db.exec(readFileSync("supabase/migrations/002_team.sql", "utf8"));
 await db.exec(
   readFileSync("supabase/migrations/003_practical_workflow.sql", "utf8"),
 );
+await db.exec(readFileSync("supabase/migrations/004_app_admin.sql", "utf8"));
+await q("select bootstrap_app_admin('admin@test.invalid')");
+await q("update app_admins set onboarding_completed=true where user_id=$1", [
+  A,
+]);
 await q("select set_config('request.jwt.claim.sub',$1,false)", [O]);
 await q("select initialize_account()");
 const facility = (
@@ -137,7 +143,14 @@ async function pageFor(actor, email) {
         await new Promise((r) => setTimeout(r, delaySave));
       const work = queue.then(async () => {
         await db.exec("reset role");
-        await q("select set_config('request.jwt.claim.sub',$1,false)", [actor]);
+        await q(
+          "select set_config('request.jwt.claim.sub',$1,false),set_config('request.jwt.claims',$2,false),set_config('request.headers',$3,false)",
+          [
+            actor,
+            JSON.stringify({ sub: actor }),
+            JSON.stringify(request.headers()),
+          ],
+        );
         await db.exec("set role authenticated");
         try {
           if (url.pathname.includes("/rpc/")) {
@@ -160,6 +173,23 @@ async function pageFor(actor, email) {
           } else {
             const table = url.pathname.split("/").at(-1);
             assert.match(table, /^[a-z_]+$/);
+            if (request.method() === "PATCH") {
+              const keys = Object.keys(body);
+              keys.forEach((k) => assert.match(k, /^[a-z_]+$/));
+              const id = url.searchParams.get("id")?.replace(/^eq\./, "");
+              const owner = url.searchParams
+                .get("user_id")
+                ?.replace(/^eq\./, "");
+              assert.ok(id && owner);
+              if (actor === A) assert.equal(body.user_id, O);
+              const values = keys.map((k) => body[k]);
+              const saved = await q(
+                `update public.${table} set ${keys.map((k, i) => k + "=$" + (i + 1)).join(",")} where id=$${keys.length + 1} and user_id=$${keys.length + 2} returning id`,
+                [...values, id, owner],
+              );
+              await route.fulfill({ json: saved[0] });
+              return;
+            }
             assert.equal(request.method(), "GET");
             const rows = await q(`select * from public.${table} order by id`);
             await route.fulfill({
@@ -196,7 +226,12 @@ async function pageFor(actor, email) {
   const page = await context.newPage();
   page.on("pageerror", (e) => errors.push(e.message));
   await page.goto(process.env.APP_URL || "http://localhost:5173");
-  await page.getByRole("heading", { name: /Guten Tag/ }).waitFor();
+  await page
+    .getByRole("heading", {
+      name: actor === A ? "App-Admin" : /Guten Tag/,
+      exact: actor === A,
+    })
+    .waitFor();
   return page;
 }
 try {
@@ -355,7 +390,62 @@ try {
   await employee
     .getByRole("heading", { name: "Unternehmenszugang nicht verfügbar" })
     .waitFor();
-  for (const page of [employee, second, owner])
+  const admin = await pageFor(A, "admin@test.invalid");
+  await admin
+    .getByRole("heading", { name: "App-Admin", exact: true })
+    .waitFor();
+  await db.exec("reset role");
+  const business = (
+    await q("select id from businesses where owner_user_id=$1", [O])
+  )[0].id;
+  await admin
+    .getByLabel("Unternehmen verwalten", { exact: true })
+    .selectOption(business);
+  await admin.getByRole("heading", { name: /Guten Tag/ }).waitFor();
+  await admin.goto(
+    (process.env.APP_URL || "http://localhost:5173") + "/#facility/" + facility,
+  );
+  await admin
+    .getByRole("button", { name: "Bearbeiten", exact: true })
+    .first()
+    .click();
+  await admin
+    .getByRole("dialog")
+    .getByLabel("Name", { exact: true })
+    .fill("Vom App-Admin geändert");
+  await admin
+    .getByRole("dialog")
+    .getByRole("button", { name: "Speichern", exact: true })
+    .click();
+  await admin
+    .getByRole("heading", { name: "Vom App-Admin geändert", exact: true })
+    .waitFor();
+  await db.exec("reset role");
+  assert.equal(
+    (await q("select user_id from facilities where id=$1", [facility]))[0]
+      .user_id,
+    O,
+  );
+  await admin
+    .getByLabel("Unternehmen verwalten", { exact: true })
+    .selectOption("");
+  await admin
+    .getByRole("button", {
+      name: "App-Admin hinzufügen / aktivieren",
+      exact: true,
+    })
+    .waitFor();
+  await admin
+    .getByLabel("Bestätigte Konto-E-Mail *", { exact: true })
+    .fill("second@test.invalid");
+  await admin
+    .getByRole("button", {
+      name: "App-Admin hinzufügen / aktivieren",
+      exact: true,
+    })
+    .click();
+  await admin.getByText("second@test.invalid", { exact: true }).waitFor();
+  for (const page of [employee, second, owner, admin])
     assert.equal(
       await page.evaluate(
         () => document.documentElement.scrollWidth > innerWidth,
@@ -365,7 +455,7 @@ try {
     );
   assert.deepEqual(errors, []);
   console.log(
-    "Team browser passed: employee navigation, shared workflow, autosave/reload/in-flight edits/network failure, responsible close, owner PDF and immediate revocation.",
+    "Team browser passed: employee navigation, shared workflow, autosave/reload/in-flight edits/network failure, responsible close, owner PDF, immediate revocation, global administrator selection, safe owner-scoped editing and admin grant.",
   );
 } finally {
   await browser.close();

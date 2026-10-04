@@ -1,3 +1,4 @@
+import { AppAdminPanel } from "./AppAdmin";
 import { FeedbackSettings, openIntroduction } from "./Assistance";
 import { PaymentsSettings } from "./Payments";
 import { TeamSettings } from "./Team";
@@ -23,8 +24,17 @@ export function Settings({
   tab?: string;
   edit: Edit;
 }) {
-  const { data, demo, logout, setNotify, run, isOwner, team, beforeNavigate } =
-    useStore();
+  const {
+    data,
+    demo,
+    logout,
+    setNotify,
+    run,
+    isOwner,
+    appAdmin,
+    team,
+    beforeNavigate,
+  } = useStore();
   const [tab, setTab] = useState(
       !isOwner ? "App" : initial === "services" ? "Leistungen" : initial,
     ),
@@ -45,6 +55,7 @@ export function Settings({
               "Abrechnung",
               "Rückmeldungen",
               "App",
+              ...(appAdmin?.is_admin ? ["App-Admin"] : []),
             ]
           : ["App"]
         ).map((t) => (
@@ -64,6 +75,7 @@ export function Settings({
           </button>
         ))}
       </div>
+      {tab === "App-Admin" && <AppAdminPanel />}
       {tab === "Abrechnung" && isOwner && <PaymentsSettings />}
       {tab === "Rückmeldungen" && isOwner && <FeedbackSettings />}
       {tab === "Team" && isOwner && <TeamSettings />}

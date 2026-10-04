@@ -1,3 +1,9 @@
+# HeimFriseur – Version 4.0 mit App-Admin
+
+Zusätzlich zur Team- und Alltagsversion können ausdrücklich eingerichtete App-Admins alle Unternehmen auswählen und dort mit Geschäftsführerrechten arbeiten. Einrichtung, SQL-Bootstrap und Grenzen: [APP-ADMIN-UPDATE.md](APP-ADMIN-UPDATE.md).
+
+**Bestehendes Projekt:** Nach bereits vorhandenen Migrationen 001–003 die Migration 004 einmal ausführen, ein bestätigtes Konto gezielt über SQL als ersten Admin aktivieren und die Website aktualisieren. Keine bestehende Migration erneut ausführen. Build: `npm ci` und `npm run build`, Ausgabe: `dist`.
+
 # HeimFriseur – Version 3.0
 
 Die bestehende Team-App enthält jetzt flexible Heim- und Kundenrhythmen, Untergruppen, Heimpreise, Zahlungsdokumentation, konfigurierbare Mitarbeiterrechte, lokalen Fotoimport, Einführung und Feedback. Anleitung und Grenzen: [PRACTICAL-UPDATE.md](PRACTICAL-UPDATE.md). Die Team-Grundlage ist in [TEAM-UPDATE.md](TEAM-UPDATE.md) dokumentiert.
