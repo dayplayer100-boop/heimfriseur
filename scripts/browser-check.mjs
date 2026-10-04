@@ -13,7 +13,10 @@ page.on("pageerror", (e) => errors.push(e.message));
 const base = process.env.APP_URL || "http://localhost:5173";
 await page.goto(base);
 await page
-  .getByRole("button", { name: "Mit Beispieldaten ausprobieren", exact: true })
+  .getByRole("button", {
+    name: /^(Mit )?Beispieldaten ausprobieren$/,
+    exact: true,
+  })
   .click();
 await page.getByRole("heading", { name: "Guten Tag, Anna." }).waitFor();
 assert.equal(

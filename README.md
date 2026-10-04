@@ -4,7 +4,7 @@ Mobile React-/TypeScript-Web-App für regelmäßige Friseurbesuche in Einrichtun
 
 ## Entwicklungsstand
 
-Der Quellcode enthält die V1-Funktionen für Stammdaten, Standardleistungen, Kalender, Besuche, Timer, Behandlungen, Farbrezepturen, Kosten, Auswertung, PDF und PWA. Build und lokale Prüfungen sind erfolgreich. Die Verbindung mit einem echten Supabase-Projekt und der Live-Test von Registrierung, E-Mail-Bestätigung und Passwort-Reset stehen noch aus: In dieser Entwicklungsumgebung wurden keine Supabase-Verbindungsdaten bereitgestellt. Die Migration wurde in einer lokalen PostgreSQL-Testumgebung geprüft, **nicht** auf einem entfernten Projekt ausgeführt.
+Der Quellcode enthält die V1-Funktionen für Stammdaten, Standardleistungen, Kalender, Besuche, Timer, Behandlungen, Farbrezepturen, Kosten, Auswertung, PDF und PWA. Build und lokale Prüfungen sind erfolgreich. Das Supabase-Projekt ist inzwischen eingerichtet und die öffentliche Browser-Verbindung in `src/deployment.ts` hinterlegt. Die Migration wurde vom Nutzer im SQL-Editor erfolgreich ausgeführt. Auth-Erreichbarkeit und anonyme Zugriffssperren für alle elf Tabellen und die Kontoinitialisierung wurden am echten Projekt geprüft. Der vollständige authentifizierte Ablauf einschließlich E-Mail-Bestätigung und Passwort-Reset muss noch mit dem eigenen Nutzerkonto geprüft werden.
 
 Details und bewusste Vereinfachungen stehen in [ENTWICKLUNGSSTAND.md](ENTWICKLUNGSSTAND.md).
 
@@ -23,7 +23,7 @@ npm ci
 Copy-Item .env.example .env.local
 ```
 
-`.env.local` bearbeiten und diese beiden Variablen setzen:
+Das konfigurierte HeimFriseur-Projekt wird automatisch verwendet. Um ein anderes Supabase-Projekt zu verwenden, `.env.local` bearbeiten und diese beiden Variablen setzen:
 
 ```dotenv
 VITE_SUPABASE_URL=https://YOUR_PROJECT.supabase.co

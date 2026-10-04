@@ -57,3 +57,9 @@ PWA-Installation unter iOS/Android, Druckdialoge der jeweiligen Betriebssysteme 
 ## Nächster Integrationsschritt
 
 Supabase-Migration anwenden, öffentliche Verbindung konfigurieren, Auth-Redirects freigeben und den vollständigen Ablauf mit einem realen Testkonto prüfen. Danach den geprüften Build in das im Windows-Chat ausgewählte Firebase-Hosting-Projekt übernehmen. Kein Backend-Wechsel zu Firebase erforderlich.
+
+## Aktualisierung: echte Supabase-Verbindung
+
+Der Nutzer hat die Migration erfolgreich auf dem Projekt `bvqysdiofglgxqtydeko` ausgeführt. Die öffentliche Verbindung ist in `src/deployment.ts` als Browserkonfiguration hinterlegt; sie enthält keinen Secret- oder Service-Role-Key. Vite-Variablen oder eine bewusst gespeicherte Browserkonfiguration können diese Standardverbindung ersetzen.
+
+Am echten Projekt geprüft: Auth-Einstellungen erreichbar (HTTP 200), E-Mail-Anmeldung und Registrierung aktiviert; anonyme Leseversuche auf allen elf Tabellen und die anonyme Kontoinitialisierung abgewiesen (HTTP 401, PostgreSQL 42501). Build und 17 lokale Tests weiterhin erfolgreich. Die früheren Aussagen zur noch fehlenden Supabase-Verbindung sind damit überholt. Der vollständige authentifizierte Live-Ablauf, E-Mail-Bestätigung und Passwort-Reset bleiben nach Veröffentlichung mit dem eigenen Konto zu prüfen. Vor der Registrierung muss die Firebase-Adresse als Supabase Site URL/Redirect URL eingestellt werden.

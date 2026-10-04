@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { deploymentConnection } from "./deployment";
 const saved = (() => {
   try {
     return JSON.parse(localStorage.getItem("heimfriseur-connection") || "{}");
@@ -7,8 +8,12 @@ const saved = (() => {
   }
 })();
 export const connection = {
-  url: import.meta.env.VITE_SUPABASE_URL || saved.url || "",
-  key: import.meta.env.VITE_SUPABASE_ANON_KEY || saved.key || "",
+  url:
+    import.meta.env.VITE_SUPABASE_URL || saved.url || deploymentConnection.url,
+  key:
+    import.meta.env.VITE_SUPABASE_ANON_KEY ||
+    saved.key ||
+    deploymentConnection.key,
 };
 export const supabase =
   connection.url && connection.key
