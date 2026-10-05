@@ -334,9 +334,19 @@ try {
     0,
   );
   await employee.locator(".visit-customer.is-done .name-link").first().click();
-  await employee.getByRole("button", { name: "Historie", exact: true }).click();
+  await employee
+    .getByRole("heading", { name: "Behandlungshistorie", exact: true })
+    .waitFor();
   assert.doesNotMatch(
-    await employee.locator(".history-list").innerText(),
+    await employee
+      .locator("section.panel")
+      .filter({
+        has: employee.getByRole("heading", {
+          name: "Behandlungshistorie",
+          exact: true,
+        }),
+      })
+      .innerText(),
     /€|Material:/,
     "Historical finances must not appear for employees",
   );
