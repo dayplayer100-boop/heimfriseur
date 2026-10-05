@@ -2879,3 +2879,57 @@ code {
   font-weight: 600;
   color: #285f57;
 }
+.version-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 24px;
+  background: #f1f5f2;
+  color: #47625a;
+  font-size: 12px;
+}
+.version-bar .button {
+  min-height: 44px;
+}
+.save-status-bar {
+  padding: 6px 24px;
+  text-align: right;
+  font-size: 12px;
+  color: #47625a;
+}
+.workday {
+  margin-bottom: 20px;
+}
+.workday .button {
+  margin-right: 8px;
+  margin-bottom: 8px;
+}
+@media (max-width: 600px) {
+  .version-bar {
+    padding: 8px 16px;
+  }
+  .save-status-bar {
+    padding: 4px 16px;
+  }
+  .list-row {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+}
+.week-planning {
+  margin-bottom: 20px;
+}
+.week-planning > summary {
+  padding: 16px;
+  background: #fff;
+  border: 1px solid #dce5e0;
+  border-radius: 12px;
+  cursor: pointer;
+  min-height: 48px;
+  font-weight: 600;
+}
+.week-planning[open] > summary {
+  margin-bottom: 12px;
+}

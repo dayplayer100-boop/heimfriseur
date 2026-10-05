@@ -61,6 +61,7 @@ export function Visit({
     }),
     [member, setMember] = useState(""),
     [reason, setReason] = useState("Nicht anwesend"),
+    [nextChoice, setNextChoice] = useState("next_visit"),
     [entryType, setEntryType] = useState("Spontan"),
     [nextDate, setNextDate] = useState(
       addWeeks(
@@ -276,6 +277,7 @@ export function Visit({
                       aria-label={`${fullName(c)} nicht durchgeführt`}
                       onClick={() => {
                         setMember(m.id);
+                        setNextChoice("next_visit");
                         setDialog("skip");
                       }}
                     >
@@ -431,13 +433,31 @@ export function Visit({
               ))}
             </select>
           </Field>
-          <Input
-            label="Wann ist der nächste Behandlungstermin?"
-            type="date"
-            value={nextDate}
-            onChange={setNextDate}
-          />
-          <Button variant="secondary" onClick={() => setNextDate("")}>
+          <Field label="Nächster Termin">
+            <select
+              value={nextChoice}
+              onChange={(e) => setNextChoice(e.target.value)}
+            >
+              <option value="next_visit">Beim nächsten Heimbesuch</option>
+              <option value="regular">Normaler Rhythmus</option>
+              <option value="custom">Eigenes Datum</option>
+            </select>
+          </Field>
+          {nextChoice === "custom" && (
+            <Input
+              label="Wann ist der nächste Behandlungstermin?"
+              type="date"
+              value={nextDate}
+              onChange={setNextDate}
+            />
+          )}
+          <Button
+            variant="secondary"
+            onClick={() => {
+              setNextChoice("legacy");
+              setNextDate("");
+            }}
+          >
             Termin noch offen lassen
           </Button>
           <p className="muted">
@@ -447,10 +467,11 @@ export function Visit({
           <Button
             onClick={async () => {
               const ok = await run(async () => {
-                await rpc("skip_customer_followup", {
+                await rpc("skip_customer_choice", {
                   p_member: member,
                   p_reason: reason,
-                  p_next_date: nextDate || null,
+                  p_choice: nextChoice === "legacy" ? "unknown" : nextChoice,
+                  p_date: nextChoice === "custom" ? nextDate : null,
                 });
                 return true;
               });
@@ -530,6 +551,30 @@ export function Visit({
       )}
       {dialog === "close" && (
         <Modal title="Besuch abschließen" onClose={() => setDialog("")}>
+          {members
+            .filter((m) => m.status === "Offen" || m.status === "In Behandlung")
+            .map((m) => (
+              <p className="warning" key={m.id}>
+                {fullName(data.customers.find((c) => c.id === m.customer_id)!)}:{" "}
+                {m.status === "In Behandlung"
+                  ? "Behandlung läuft noch"
+                  : "Noch offen – behandeln oder überspringen"}
+              </p>
+            ))}
+          {data.treatments.filter(
+            (t) =>
+              t.appointment_id === id &&
+              (isOwner || (t.performed_by || t.user_id) === actorId) &&
+              t.end_time &&
+              (!data.treatment_payments.find((p) => p.treatment_id === t.id) ||
+                data.treatment_payments.find((p) => p.treatment_id === t.id)
+                  ?.status === "Unbekannt"),
+          ).length > 0 && (
+            <p className="warning">
+              Zahlungsangaben fehlen noch bei abgeschlossenen Behandlungen. Du
+              kannst den Besuch trotzdem abschließen und sie später ergänzen.
+            </p>
+          )}
           <dl className="summary">
             <dt>Geplante Kunden</dt>
             <dd>{members.length}</dd>

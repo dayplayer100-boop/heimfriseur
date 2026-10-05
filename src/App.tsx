@@ -1,3 +1,4 @@
+import { SaveStatus } from "./SaveStatus";
 import { SetupGuide } from "./SetupGuide";
 import { PasswordInput } from "./PasswordInput";
 import { AppAdminPanel } from "./AppAdmin";
@@ -407,6 +408,9 @@ export function App() {
                 verbunden bist.
               </div>
             )}
+            <div className="save-status-bar">
+              <SaveStatus />
+            </div>
             <AppUpdate />
             <main>{content}</main>
             <footer className="app-footer">
@@ -431,6 +435,7 @@ export function App() {
       ) : (
         content
       )}
+      {!user && !demo && <AppUpdate />}
       <Assistance />
       {error && (
         <div className="toast error" role="alert">

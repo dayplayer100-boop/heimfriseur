@@ -97,5 +97,10 @@ export function useAutosave<T>(
       window.removeEventListener("beforeunload", unload);
     };
   }, []);
+  useEffect(() => {
+    window.dispatchEvent(
+      new CustomEvent("heimfriseur-save-status", { detail: { status } }),
+    );
+  }, [enabled, status]);
   return { dirty, status, error, flush };
 }

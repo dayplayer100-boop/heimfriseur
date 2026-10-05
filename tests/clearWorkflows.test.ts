@@ -54,6 +54,7 @@ beforeAll(async () => {
     "003_practical_workflow.sql",
     "004_app_admin.sql",
     "005_clear_workflows.sql",
+    "006_workday.sql",
   ])
     await db.exec(
       readFileSync("supabase/migrations/" + file, "utf8").replace(
@@ -317,6 +318,189 @@ describe.sequential("V5: Bedienung und sichere Arbeitsabläufe", () => {
     await expect(
       rpc("plan_customer_visit", { ...params, p_group: other }),
     ).rejects.toThrow("zugewiesene Gruppe");
+  });
+});
+describe.sequential("V6: einmalige Änderungen und Zahlungen", () => {
+  it("bewahrt den Rhythmus nach einer vorgezogenen Behandlung und verhindert doppelte Nachholtermine", async () => {
+    await as(O);
+    const customer = await rpc("save_customer", {
+      p_data: {
+        facility_id: f,
+        group_id: g,
+        first_name: "Rhythmus",
+        recurrence_weeks: 5,
+        next_due_date: "2027-10-12",
+      },
+      p_services: [s],
+    });
+    const original = await rpc("plan_customer_visit", {
+      p_facility: f,
+      p_group: g,
+      p_customer: customer,
+      p_date: "2027-10-12",
+      p_time: "09:00",
+    });
+    const later = await rpc("plan_customer_visit", {
+      p_facility: f,
+      p_group: g,
+      p_customer: customer,
+      p_date: "2027-11-16",
+      p_time: "09:00",
+    });
+    const target = await rpc("reschedule_customer_once", {
+      p_customer: customer,
+      p_date: "2027-10-05",
+      p_time: "10:00",
+    });
+    expect(
+      await rpc("reschedule_customer_once", {
+        p_customer: customer,
+        p_date: "2027-10-05",
+        p_time: "10:00",
+      }),
+    ).toBe(target);
+    expect(
+      (
+        await q(
+          "select status from appointment_customers where appointment_id=$1",
+          [original],
+        )
+      )[0].status,
+    ).toBe("Nicht durchgeführt");
+    expect(
+      (
+        await q(
+          "select status from appointment_customers where appointment_id=$1",
+          [later],
+        )
+      )[0].status,
+    ).toBe("Offen");
+    const member = (
+      await q("select id from appointment_customers where appointment_id=$1", [
+        target,
+      ])
+    )[0].id;
+    const t = await rpc("start_treatment", { p_member: member });
+    await rpc("save_treatment", {
+      p_treatment: t,
+      p_services: [s],
+      p_price: 35,
+      p_material: 0,
+      p_notes: "",
+      p_finish: true,
+    });
+    const row = (
+      await q(
+        "select next_due_date,temporary_due_date from customers where id=$1",
+        [customer],
+      )
+    )[0];
+    expect(row.next_due_date.toISOString().slice(0, 10)).toBe("2027-11-16");
+    expect(row.temporary_due_date).toBe(null);
+    await rpc("record_payment", {
+      p_treatment: t,
+      p_data: { status: "Unbekannt" },
+    });
+    expect(
+      (
+        await q("select status from treatment_payments where treatment_id=$1", [
+          t,
+        ])
+      )[0].status,
+    ).toBe("Unbekannt");
+  });
+  it("bietet den nächsten Heimbesuch ohne Änderung des regulären Datums an", async () => {
+    await as(O);
+    const customer = await rpc("save_customer", {
+      p_data: {
+        facility_id: f,
+        group_id: g,
+        first_name: "Abwesend",
+        recurrence_weeks: 5,
+        next_due_date: "2028-01-04",
+      },
+      p_services: [],
+    });
+    const a = await rpc("plan_customer_visit", {
+      p_facility: f,
+      p_group: g,
+      p_customer: customer,
+      p_date: "2028-01-04",
+      p_time: "09:00",
+    });
+    const member = (
+      await q("select id from appointment_customers where appointment_id=$1", [
+        a,
+      ])
+    )[0].id;
+    await rpc("skip_customer_choice", {
+      p_member: member,
+      p_reason: "Krank",
+      p_choice: "next_visit",
+    });
+    const row = (
+      await q(
+        "select next_due_date,temporary_due_date from customers where id=$1",
+        [customer],
+      )
+    )[0];
+    expect(row.next_due_date.toISOString().slice(0, 10)).toBe("2028-01-04");
+    expect(row.temporary_due_date.toISOString().slice(0, 10)).toBe(
+      "2028-01-11",
+    );
+    await as(E);
+    await expect(
+      rpc("reschedule_customer_once", {
+        p_customer: customer,
+        p_date: "2028-01-18",
+      }),
+    ).resolves.toBeTruthy();
+    await as(O);
+    const unassignedCustomer = await rpc("save_customer", {
+      p_data: {
+        facility_id: f,
+        group_id: g,
+        first_name: "Andere Zuweisung",
+        next_due_date: "2028-05-02",
+      },
+      p_services: [],
+    });
+    const unassignedVisit = await rpc("plan_customer_visit", {
+      p_facility: f,
+      p_group: g,
+      p_customer: unassignedCustomer,
+      p_date: "2028-05-02",
+      p_time: "09:00",
+    });
+    await as(E);
+    await expect(
+      rpc("reschedule_customer_once", {
+        p_customer: unassignedCustomer,
+        p_date: "2028-05-09",
+      }),
+    ).rejects.toThrow("zuerst zugewiesen");
+    await as(O);
+    expect(
+      (
+        await q(
+          "select status from appointment_customers where appointment_id=$1",
+          [unassignedVisit],
+        )
+      )[0].status,
+    ).toBe("Offen");
+    await rpc("set_member_permissions", {
+      p_member: (await rpc("get_team_context")).members.find(
+        (m: any) => m.user_id === E,
+      ).id,
+      p_permissions: { edit_schedule: false },
+    });
+    await as(E);
+    await expect(
+      rpc("reschedule_customer_once", {
+        p_customer: customer,
+        p_date: "2028-01-25",
+      }),
+    ).rejects.toThrow("darfst du nicht");
   });
 });
 describe("Deutsche Datum- und Zeiteingabe", () => {

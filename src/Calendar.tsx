@@ -1,3 +1,4 @@
+import { WeekPlanning } from "./WeekPlanning";
 import { scheduledCustomerLabel } from "./domain";
 import { visitArea } from "./domain";
 import { useState } from "react";
@@ -70,6 +71,10 @@ export function Calendar({
           )
         }
       />
+      <details className="week-planning">
+        <summary>Wochenplanung je Heim · fällige Kunden</summary>
+        <WeekPlanning navigate={navigate} />
+      </details>
       <div className="calendar-toolbar">
         <div className="segmented">
           {["Monat", "Woche", "Liste"].map((v) => (

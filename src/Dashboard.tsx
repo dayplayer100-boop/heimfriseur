@@ -1,3 +1,4 @@
+import { Workday } from "./Workday";
 import { visitArea, scheduledCustomerLabel } from "./domain";
 import {
   CalendarDays,
@@ -164,6 +165,7 @@ export function Dashboard({
           )
         }
       />
+      {!isOwner && <Workday navigate={navigate} />}
       {data.treatments
         .filter((t) => !t.end_time && (t.performed_by || t.user_id) === actorId)
         .map((t) => (

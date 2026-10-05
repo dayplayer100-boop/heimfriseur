@@ -1,6 +1,6 @@
 {
   "name": "heimfriseur",
-  "version": "5.0.0",
+  "version": "6.0.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -15,7 +15,8 @@
     "prebuild": "node scripts/prepare-ocr.mjs",
     "predev": "node scripts/prepare-ocr.mjs",
     "test:practical-browser": "node scripts/practical-browser-check.mjs",
-    "test:clear-browser": "node scripts/clear-browser-check.mjs"
+    "test:clear-browser": "node scripts/clear-browser-check.mjs",
+    "test:workday-browser": "node scripts/workday-browser-check.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.57.0",

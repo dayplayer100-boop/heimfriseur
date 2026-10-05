@@ -161,6 +161,7 @@ export function customerDue(
 ) {
   if (customer.status !== "Aktiv" || customer.hair_request === "Nein")
     return false;
+  if (customer.temporary_due_date) return customer.temporary_due_date <= date;
   if (customer.next_due_date) return customer.next_due_date <= date;
   const cohort = data.cohorts.find((g) => g.id === customer.cohort_id);
   if (!cohort) return true;

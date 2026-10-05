@@ -29,6 +29,37 @@ export function PermissionsEditor({
         Unternehmensauswertungen, Teamverwaltung und Löschen bleiben beim
         Geschäftsführer.
       </p>
+      <div className="button-group">
+        <Button
+          variant="secondary"
+          onClick={() =>
+            setPermissions(
+              Object.fromEntries(permissionLabels.map(([key]) => [key, false])),
+            )
+          }
+        >
+          Vorlage: Nur behandeln
+        </Button>
+        <Button
+          variant="secondary"
+          onClick={() =>
+            setPermissions(
+              Object.fromEntries(
+                permissionLabels.map(([key]) => [
+                  key,
+                  ["edit_schedule", "record_payments"].includes(key),
+                ]),
+              ),
+            )
+          }
+        >
+          Vorlage: Behandeln und Termine planen
+        </Button>
+      </div>
+      <p className="muted">
+        Vorlagen werden erst mit „Berechtigungen speichern“ übernommen. Einzelne
+        Rechte kannst du danach beliebig anpassen.
+      </p>
       {permissionLabels.map(([key, label]) => (
         <label className="check-row" key={key}>
           <input

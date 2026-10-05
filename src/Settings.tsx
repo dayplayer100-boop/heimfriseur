@@ -1,3 +1,4 @@
+import { appVersion, checkAppUpdate } from "./AppUpdate";
 import { PriceLists } from "./PriceLists";
 import { AppAdminPanel } from "./AppAdmin";
 import { FeedbackSettings, openIntroduction } from "./Assistance";
@@ -161,6 +162,14 @@ export function Settings({
                 Unternehmen Schritt für Schritt einrichten
               </Button>
             )}
+            <Button variant="secondary" onClick={checkAppUpdate}>
+              Neue App-Version prüfen
+            </Button>
+            <p className="muted">
+              Website und installierte App nutzen dieselbe Veröffentlichung.
+              Eine neue Version wird oben angezeigt und über „Neue Version
+              laden“ übernommen. Zum Aktualisieren ist Internet nötig.
+            </p>
             <div className="settings-install">
               <InstallAppButton />
             </div>
@@ -172,7 +181,7 @@ export function Settings({
               <dt>Sprache</dt>
               <dd>Deutsch</dd>
               <dt>Version</dt>
-              <dd>5.0 · Einfacher Arbeitsalltag</dd>
+              <dd>{appVersion} · Website und installierte App</dd>
             </dl>
             <p className="muted">
               Auf dem Smartphone über das Browser-Menü zum Home-Bildschirm

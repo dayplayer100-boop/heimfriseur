@@ -95,7 +95,7 @@ export function PaymentDialog({
   const [method, setMethod] = useState(
       stored?.payment_method_id || billing?.payment_method_id || "",
     ),
-    [status, setStatus] = useState(stored?.status || "Offen"),
+    [status, setStatus] = useState(stored?.status || "Unbekannt"),
     [delivery, setDelivery] = useState(
       stored?.delivery || billing?.delivery || "Keine Angabe",
     );
@@ -135,6 +135,7 @@ export function PaymentDialog({
       </Field>
       <Field label="Zahlungsstatus">
         <select value={status} onChange={(e) => setStatus(e.target.value)}>
+          <option>Unbekannt</option>
           <option>Offen</option>
           <option>Bezahlt</option>
           <option>Nicht erforderlich</option>
@@ -178,7 +179,35 @@ export function PaymentDialog({
 export function PaymentsSettings() {
   const { data, rpc, run } = useStore();
   const [name, setName] = useState(""),
-    [payment, setPayment] = useState<string | null>(null);
+    [payment, setPayment] = useState<string | null>(null),
+    [facility, setFacility] = useState(""),
+    [statusFilter, setStatusFilter] = useState("Alle"),
+    [search, setSearch] = useState("");
+  const outstanding = data.treatments
+    .filter((t) => t.end_time)
+    .filter((t) => {
+      const p = data.treatment_payments.find((p) => p.treatment_id === t.id);
+      return (
+        !["Bezahlt", "Nicht erforderlich"].includes(p?.status || "") &&
+        (!facility ||
+          data.appointments.find((a) => a.id === t.appointment_id)
+            ?.facility_id === facility) &&
+        (statusFilter === "Alle" ||
+          (p?.status || "Unbekannt") === statusFilter) &&
+        (
+          (data.customers.find((c) => c.id === t.customer_id)
+            ? fullName(data.customers.find((c) => c.id === t.customer_id)!)
+            : "") +
+          " " +
+          (p?.billing_name_snapshot ||
+            data.customer_billing.find((b) => b.customer_id === t.customer_id)
+              ?.billing_name ||
+            "")
+        )
+          .toLowerCase()
+          .includes(search.toLowerCase())
+      );
+    });
   return (
     <div className="stack">
       <section className="panel">
@@ -226,34 +255,76 @@ export function PaymentsSettings() {
       </section>
       <section className="panel">
         <h2>Offene Zahlungen / noch nicht erfasst</h2>
-        {data.treatments
-          .filter(
-            (t) =>
-              t.end_time &&
-              data.treatment_payments.find((p) => p.treatment_id === t.id)
-                ?.status !== "Bezahlt" &&
-              data.treatment_payments.find((p) => p.treatment_id === t.id)
-                ?.status !== "Nicht erforderlich",
-          )
-          .map((t) => (
-            <div className="list-row" key={t.id}>
-              <div>
-                <strong>
-                  {fullName(
-                    data.customers.find((c) => c.id === t.customer_id)!,
-                  )}
-                </strong>
-                <p>
-                  {dateLabel(t.start_time)} · {euro(t.total_price)} ·{" "}
-                  {data.treatment_payments.find((p) => p.treatment_id === t.id)
-                    ?.method_name_snapshot || "Noch offen"}
-                </p>
-              </div>
-              <Button variant="secondary" onClick={() => setPayment(t.id)}>
-                Abrechnung öffnen
-              </Button>
+        <div className="form-grid">
+          <Field label="Heim für offene Zahlungen">
+            <select
+              value={facility}
+              onChange={(e) => setFacility(e.target.value)}
+            >
+              <option value="">Alle Heime</option>
+              {data.facilities.map((f) => (
+                <option key={f.id} value={f.id}>
+                  {f.name}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Offene Zahlungen filtern">
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+            >
+              <option>Alle</option>
+              <option>Offen</option>
+              <option>Unbekannt</option>
+            </select>
+          </Field>
+          <Input
+            label="Kunde oder Rechnungsempfänger suchen"
+            value={search}
+            onChange={setSearch}
+          />
+        </div>
+        <p>
+          <strong>
+            {outstanding.length} offene / ungeklärte Zahlungen ·{" "}
+            {euro(
+              outstanding.reduce((sum, t) => sum + Number(t.total_price), 0),
+            )}
+          </strong>
+        </p>
+        {!outstanding.length && (
+          <p>Keine offenen Zahlungen für diese Auswahl.</p>
+        )}
+        {outstanding.map((t) => (
+          <div className="list-row" key={t.id}>
+            <div>
+              <strong>
+                {fullName(data.customers.find((c) => c.id === t.customer_id)!)}
+              </strong>
+              <p>
+                {dateLabel(t.start_time)} · {euro(t.total_price)} ·{" "}
+                {data.treatment_payments.find((p) => p.treatment_id === t.id)
+                  ?.method_name_snapshot || "Noch offen"}
+              </p>
             </div>
-          ))}
+            <p>
+              Zuständig:{" "}
+              {data.treatment_payments.find((p) => p.treatment_id === t.id)
+                ?.billing_name_snapshot ||
+                data.customer_billing.find(
+                  (b) => b.customer_id === t.customer_id,
+                )?.billing_name ||
+                "Rechnungsempfänger noch offen"}{" "}
+              · Status:{" "}
+              {data.treatment_payments.find((p) => p.treatment_id === t.id)
+                ?.status || "Unbekannt"}
+            </p>
+            <Button variant="secondary" onClick={() => setPayment(t.id)}>
+              Abrechnung öffnen
+            </Button>
+          </div>
+        ))}
       </section>
       {payment && (
         <PaymentDialog treatmentId={payment} onClose={() => setPayment(null)} />

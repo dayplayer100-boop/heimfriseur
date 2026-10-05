@@ -45,6 +45,8 @@ export interface Group extends Base {
   notes: string;
 }
 export interface Customer extends Base {
+  temporary_due_date?: string | null;
+  rhythm_anchor_date?: string | null;
   recurrence_weeks?: number | null;
   next_due_date?: string | null;
   cohort_id?: string | null;

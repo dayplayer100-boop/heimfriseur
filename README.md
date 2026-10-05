@@ -1,3 +1,9 @@
+# HeimFriseur – Version 6.0
+
+Mein Arbeitstag, Kundenwochenplanung, einmalige Terminänderungen mit erhaltenem Rhythmus, Abwesenheitsauswahl, Zahlungsübersicht, Rechtevorlagen, Speicheranzeige und gemeinsame Versionsprüfung für Website/PWA. Update-Anleitung: [ARBEITSTAG-UPDATE.md](ARBEITSTAG-UPDATE.md).
+
+**Aktuelles Update:** Nach bereits ausgeführten Migrationen 001–005 ausschließlich `006_workday.sql` einmal ausführen. Danach `npm ci`, `npm run build` (Ausgabe `dist`) und auf der vorhandenen Firebase-Site veröffentlichen. Ältere Migrationen nicht erneut ausführen.
+
 # HeimFriseur – Version 5.0
 
 Einrichtungsassistent, eigenständige Heimpreislisten, direkte Kundengruppenzuordnung, Einzelkundentermine mit Zahleneingabe, ruhige Mitarbeiteransichten und getrennte technische App-Verwaltung. Vollständige Update-Anleitung: [EINFACHER-ARBEITSALLTAG-UPDATE.md](EINFACHER-ARBEITSALLTAG-UPDATE.md).

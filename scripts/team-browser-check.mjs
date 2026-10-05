@@ -27,6 +27,7 @@ await db.exec(readFileSync("supabase/migrations/004_app_admin.sql", "utf8"));
 await db.exec(
   readFileSync("supabase/migrations/005_clear_workflows.sql", "utf8"),
 );
+await db.exec(readFileSync("supabase/migrations/006_workday.sql", "utf8"));
 await q("select bootstrap_app_admin('admin@test.invalid')");
 await q("update app_admins set onboarding_completed=true where user_id=$1", [
   A,
@@ -242,15 +243,10 @@ try {
   assert.equal(await employee.getByText("DEIN MONAT IM BLICK").count(), 0);
   assert.equal(await employee.locator(".bottom-nav a").count(), 4);
   await employee
-    .getByRole("button", { name: "Besuch öffnen", exact: true })
-    .click();
-  assert.equal(
-    await employee.getByRole("button", { name: "Team zuweisen" }).count(),
-    0,
-  );
+    .getByRole("heading", { name: "Mein Arbeitstag", exact: true })
+    .waitFor();
   await employee
-    .getByRole("button", { name: "Start", exact: true })
-    .first()
+    .getByRole("button", { name: "Nächsten Kunden starten", exact: true })
     .click();
   await employee.getByRole("timer").waitFor();
   assert.equal(await employee.getByLabel("Manueller Endpreis (€)").count(), 0);
@@ -270,7 +266,10 @@ try {
   // A newer edit during a slow request must not be marked as saved prematurely.
   delaySave = 1400;
   await material.fill("4");
-  await employee.getByText("Wird gespeichert …", { exact: true }).waitFor();
+  await employee
+    .locator('p[role="status"]')
+    .filter({ hasText: "Wird gespeichert …" })
+    .waitFor();
   await material.fill("5");
   await employee
     .getByText("Alle Änderungen gespeichert", { exact: true })
@@ -365,6 +364,39 @@ try {
     .getByRole("button", { name: "Berechtigungen", exact: true })
     .first()
     .click();
+  await owner
+    .getByRole("button", { name: "Vorlage: Nur behandeln", exact: true })
+    .click();
+  assert.equal(
+    await owner
+      .getByRole("checkbox", {
+        name: "Zugewiesene Termine planen und verschieben",
+        exact: true,
+      })
+      .isChecked(),
+    false,
+  );
+  await owner
+    .getByRole("button", {
+      name: "Vorlage: Behandeln und Termine planen",
+      exact: true,
+    })
+    .click();
+  assert.equal(
+    await owner
+      .getByRole("checkbox", {
+        name: "Zugewiesene Termine planen und verschieben",
+        exact: true,
+      })
+      .isChecked(),
+    true,
+  );
+  await owner
+    .getByRole("checkbox", {
+      name: "Zugewiesene Termine planen und verschieben",
+      exact: true,
+    })
+    .uncheck();
   await owner
     .getByRole("checkbox", {
       name: "Kundendaten und Kundenrhythmus ändern",

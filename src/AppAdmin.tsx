@@ -124,10 +124,11 @@ export function AppAdminPanel({ compact = false }: { compact?: boolean }) {
               </Button>
             </div>
           ))}
-          <h3>App-Änderungen · Version 5.0</h3>
+          <h3>App-Änderungen · Version 6.0</h3>
           <p>
-            Einrichtungsassistent, getrennte Heimpreislisten,
-            Einzelkundentermine und vereinfachte Mitarbeiteransichten.
+            Mein Arbeitstag, Wochenplanung, einmalige Terminänderungen,
+            Zahlungsübersicht und gemeinsame Versionsprüfung für Website und
+            App.
           </p>
           <h3>Admin-Protokoll</h3>
           {(appAdmin.audit || []).map((a) => (

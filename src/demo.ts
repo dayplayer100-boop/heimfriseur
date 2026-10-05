@@ -563,12 +563,23 @@ export class DemoRepository {
         if (p.p_finish) {
           const c = d.customers.find((c) => c.id === t.customer_id)!;
           c.next_due_date = addWeeks(
-            getA(t.appointment_id).appointment_date,
+            c.rhythm_anchor_date || getA(t.appointment_id).appointment_date,
             c.recurrence_weeks ||
               d.cohorts.find((g) => g.id === c.cohort_id)?.recurrence_weeks ||
               d.groups.find((g) => g.id === c.group_id)?.recurrence_weeks ||
               5,
           );
+          while (c.next_due_date <= getA(t.appointment_id).appointment_date)
+            c.next_due_date = addWeeks(
+              c.next_due_date,
+              c.recurrence_weeks ||
+                d.cohorts.find((co) => co.id === c.cohort_id)
+                  ?.recurrence_weeks ||
+                d.groups.find((g) => g.id === c.group_id)?.recurrence_weeks ||
+                5,
+            );
+          c.temporary_due_date = null;
+          c.rhythm_anchor_date = null;
           t.end_time = new Date().toISOString();
           t.duration_minutes =
             (Date.now() - new Date(t.start_time).getTime()) / 60000;
@@ -577,6 +588,115 @@ export class DemoRepository {
           )!.status = "Erledigt";
         }
         result = t.id;
+        break;
+      }
+      case "reschedule_customer_once": {
+        const c = d.customers.find((c) => c.id === p.p_customer);
+        if (!c || c.status !== "Aktiv" || c.hair_request === "Nein")
+          throw Error("Bitte einen aktiven Kunden wählen.");
+        if (p.p_date < today())
+          throw Error("Bitte einen heutigen oder zukünftigen Termin wählen.");
+        if (d.treatments.some((t) => t.customer_id === c.id && !t.end_time))
+          throw Error("Bitte zuerst die laufende Behandlung beenden.");
+        const existing = d.appointments.find(
+          (a) =>
+            a.appointment_date === p.p_date &&
+            a.start_time === p.p_time &&
+            ["Geplant", "Verschoben"].includes(a.status) &&
+            d.appointment_customers.some(
+              (m) =>
+                m.appointment_id === a.id &&
+                m.customer_id === c.id &&
+                m.status === "Offen",
+            ),
+        );
+        if (c.temporary_due_date === p.p_date && existing) {
+          result = existing.id;
+          break;
+        }
+        const source = d.appointment_customers
+          .filter(
+            (m) =>
+              m.customer_id === c.id &&
+              m.status === "Offen" &&
+              getA(m.appointment_id).appointment_date >= today(),
+          )
+          .sort((a, b) =>
+            getA(a.appointment_id).appointment_date.localeCompare(
+              getA(b.appointment_id).appointment_date,
+            ),
+          )[0];
+        const anchor =
+          c.rhythm_anchor_date ||
+          c.next_due_date ||
+          (source ? getA(source.appointment_id).appointment_date : p.p_date);
+        if (source) {
+          source.status = "Nicht durchgeführt";
+          source.non_completion_reason =
+            p.p_date < anchor ? "Vorgezogen" : "Einmalig verschoben";
+          source.followup_date = p.p_date;
+        }
+        c.rhythm_anchor_date = anchor;
+        c.temporary_due_date = p.p_date;
+        result = await this.rpc("plan_customer_visit", {
+          p_facility: c.facility_id,
+          p_group: c.group_id,
+          p_customer: c.id,
+          p_date: p.p_date,
+          p_time: p.p_time,
+          p_weeks: null,
+          p_all: false,
+        });
+        const target = d.appointment_customers.find(
+          (m) => m.appointment_id === result && m.customer_id === c.id,
+        );
+        if (target)
+          target.entry_type = p.p_date < anchor ? "Vorgezogen" : "Verschoben";
+        break;
+      }
+      case "skip_customer_choice": {
+        const m = d.appointment_customers.find((m) => m.id === p.p_member)!;
+        const a = getA(m.appointment_id),
+          c = d.customers.find((c) => c.id === m.customer_id)!;
+        const anchor =
+          c.rhythm_anchor_date || c.next_due_date || a.appointment_date;
+        let next = p.p_date;
+        const weeks =
+          c.recurrence_weeks ||
+          d.cohorts.find((co) => co.id === c.cohort_id)?.recurrence_weeks ||
+          d.groups.find((g) => g.id === c.group_id)?.recurrence_weeks ||
+          5;
+        if (p.p_choice === "next_visit")
+          next =
+            d.appointments
+              .filter(
+                (v) =>
+                  v.facility_id === a.facility_id &&
+                  (v.all_groups || v.group_id === c.group_id) &&
+                  v.appointment_date > a.appointment_date &&
+                  ["Geplant", "Verschoben"].includes(v.status),
+              )
+              .sort((a, b) =>
+                a.appointment_date.localeCompare(b.appointment_date),
+              )[0]?.appointment_date ||
+            addWeeks(
+              a.appointment_date,
+              d.facilities.find((f) => f.id === a.facility_id)
+                ?.visit_recurrence_weeks || 1,
+            );
+        else if (p.p_choice === "regular") {
+          next = anchor;
+          while (next <= a.appointment_date) next = addWeeks(next, weeks);
+        }
+        if (p.p_choice !== "unknown" && (!next || next <= a.appointment_date))
+          throw Error("Bitte einen Termin nach dem Besuch wählen.");
+        await this.rpc("skip_customer", {
+          p_member: m.id,
+          p_reason: p.p_reason,
+        });
+        m.followup_date = next;
+        c.temporary_due_date = next;
+        c.rhythm_anchor_date = anchor;
         break;
       }
       case "skip_customer_followup": {
