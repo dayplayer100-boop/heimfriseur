@@ -23,14 +23,19 @@ try {
   await page
     .getByRole("button", { name: "Preise & Runden", exact: true })
     .click();
-  const price = page.getByLabel(/Herrenhaarschnitt · Standard/);
+  const price = page.getByLabel("Herrenhaarschnitt (€)");
   await price.fill("24,50");
   await price
     .locator("xpath=ancestor::form")
-    .getByRole("button", { name: "Preis speichern" })
+    .getByRole("button", { name: "Preisliste speichern" })
     .click();
-  await page.getByText("Heimpreis gespeichert", { exact: true }).waitFor();
-  assert.equal((await read()).facility_service_prices[0].price, 24.5);
+  await page.getByText("Preisliste gespeichert", { exact: true }).waitFor();
+  assert.equal(
+    (await read()).facility_service_prices.find(
+      (x) => x.facility_id === "f1" && x.service_id === "s1",
+    ).price,
+    24.5,
+  );
   await page.getByRole("button", { name: "Untergruppe hinzufügen" }).click();
   await page.getByLabel("Name der Runde").fill("Test-Runde A");
   await page

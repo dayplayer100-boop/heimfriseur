@@ -182,6 +182,26 @@ export class DemoRepository {
     const idx = rows.findIndex((x) => x.id === row.id);
     if (idx >= 0) rows[idx] = { ...rows[idx], ...row };
     else rows.push(row);
+    if (idx < 0 && table === "facilities")
+      for (const service of this.data.services) {
+        const first = this.data.facilities.find(
+          (f) => f.id !== row.id && !f.is_provisional,
+        );
+        this.data.facility_service_prices.push({
+          ...base(),
+          facility_id: row.id,
+          service_id: service.id,
+          price: effectivePrice(this.data, service.id, first?.id),
+        });
+      }
+    if (idx < 0 && table === "services")
+      for (const facility of this.data.facilities)
+        this.data.facility_service_prices.push({
+          ...base(),
+          facility_id: facility.id,
+          service_id: row.id,
+          price: Number((row as any).price),
+        });
     this.persist();
     return row.id;
   }
@@ -277,6 +297,54 @@ export class DemoRepository {
             service_id: id,
           }),
         );
+        break;
+      }
+      case "complete_setup":
+        break;
+      case "save_facility_price_list": {
+        const f = d.facilities.find((f) => f.id === p.p_facility);
+        if (!f) throw Error("Heim nicht gefunden.");
+        const first = d.facilities.find((f) => !f.is_provisional);
+        for (const [id, value] of Object.entries(p.p_prices)) {
+          const service = d.services.find((s) => s.id === id);
+          const price = Number(value);
+          if (!service || !Number.isFinite(price) || price < 0)
+            throw Error("Ungültiger Preis.");
+          const facilities =
+            f.id === first?.id
+              ? d.facilities.filter(
+                  (x) => x.id === f.id || !x.price_list_customized,
+                )
+              : [f];
+          for (const target of facilities) {
+            const existing = d.facility_service_prices.find(
+              (x) => x.facility_id === target.id && x.service_id === id,
+            );
+            this.save("facility_service_prices", {
+              id: existing?.id,
+              facility_id: target.id,
+              service_id: id,
+              price,
+            });
+          }
+          if (f.id === first?.id) service.price = price;
+        }
+        f.price_list_customized = true;
+        break;
+      }
+      case "plan_customer_visit": {
+        result = await this.rpc("plan_visit_flexible", {
+          ...p,
+          p_all: p.p_all && !p.p_customer,
+          p_options: { cohort_id: p.p_cohort },
+        });
+        if (p.p_customer) {
+          await this.rpc("add_visit_customer", {
+            p_appointment: result,
+            p_customer: p.p_customer,
+          });
+          getA(result).selected_customer_id = p.p_customer;
+        }
         break;
       }
       case "plan_visit_flexible": {
@@ -635,8 +703,18 @@ export class DemoRepository {
               p_time: a.start_time,
               p_weeks: a.recurrence_weeks,
               p_series: a.recurrence_series_id,
-              p_all: true,
+              p_all: a.auto_include_due ?? true,
             });
+          if (a.selected_customer_id) {
+            const future = getA(result);
+            future.selected_customer_id = a.selected_customer_id;
+            const c = d.customers.find((c) => c.id === a.selected_customer_id);
+            if (c?.status === "Aktiv" && c.hair_request !== "Nein")
+              await this.rpc("add_visit_customer", {
+                p_appointment: result,
+                p_customer: a.selected_customer_id,
+              });
+          }
         }
         break;
       }

@@ -1,3 +1,4 @@
+import { PriceLists } from "./PriceLists";
 import { AppAdminPanel } from "./AppAdmin";
 import { FeedbackSettings, openIntroduction } from "./Assistance";
 import { PaymentsSettings } from "./Payments";
@@ -94,8 +95,9 @@ export function Settings({
       )}
       {tab === "Leistungen" && isOwner && (
         <>
-          <div className="section-heading">
-            <h2>Leistungen & Preise</h2>
+          <PriceLists />
+          <div className="section-heading next-heading">
+            <h2>Leistungen & Standarddauer</h2>
             <PlusButton onClick={() => edit("services")}>Leistung</PlusButton>
           </div>
           <p className="muted">
@@ -143,9 +145,22 @@ export function Settings({
               Einführung erneut ansehen
             </Button>
             <p>
-              {team?.membership.display_name} ·{" "}
-              {isOwner ? "Geschäftsführer" : "Mitarbeiter"}
+              {appAdmin?.is_admin
+                ? "App-Verwaltung"
+                : (team?.membership.display_name || "Mein Konto") +
+                  " · " +
+                  (isOwner ? "Geschäftsführer" : "Mitarbeiter")}
             </p>
+            {isOwner && (
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  location.hash = "setup";
+                }}
+              >
+                Unternehmen Schritt für Schritt einrichten
+              </Button>
+            )}
             <div className="settings-install">
               <InstallAppButton />
             </div>
@@ -157,7 +172,7 @@ export function Settings({
               <dt>Sprache</dt>
               <dd>Deutsch</dd>
               <dt>Version</dt>
-              <dd>3.0 · Flexible Heimbesuche</dd>
+              <dd>5.0 · Einfacher Arbeitsalltag</dd>
             </dl>
             <p className="muted">
               Auf dem Smartphone über das Browser-Menü zum Home-Bildschirm

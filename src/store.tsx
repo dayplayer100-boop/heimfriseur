@@ -133,6 +133,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const admin = adminResponse.error
         ? null
         : (adminResponse.data as AppAdminContext);
+      if (version !== generation.current) return;
+      if (admin?.is_admin) {
+        if (admin.selected_business_id)
+          sessionStorage.setItem(
+            "heimfriseur-admin-business",
+            JSON.stringify({
+              userId: user.id,
+              businessId: admin.selected_business_id,
+            }),
+          );
+        else sessionStorage.removeItem("heimfriseur-admin-business");
+      }
       if (version === generation.current) setAppAdmin(admin);
       if (admin?.is_admin && !admin.selected_business_id) {
         if (version === generation.current) {

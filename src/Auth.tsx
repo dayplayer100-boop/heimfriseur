@@ -1,3 +1,4 @@
+import { PasswordInput } from "./PasswordInput";
 import { useEffect, useState } from "react";
 import { InstallAppButton } from "./InstallApp";
 import { Scissors, ShieldCheck, ArrowLeft } from "lucide-react";
@@ -175,11 +176,8 @@ export function Auth() {
               <Input label="E-Mail" name="email" type="email" required />
             )}
             {mode !== "reset" && (
-              <Input
-                label="Passwort"
-                name="password"
-                type="password"
-                required
+              <PasswordInput
+                newPassword={mode === "register" || mode === "update"}
               />
             )}
             {mode === "register" && (

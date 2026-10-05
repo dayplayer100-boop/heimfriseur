@@ -3,8 +3,16 @@ import { useStore } from "./store";
 import { Button, Input, Field } from "./ui";
 import { dateLabel } from "./domain";
 export function AppAdminPanel({ compact = false }: { compact?: boolean }) {
-  const { appAdmin, team, selectAdminBusiness, rpc, run, setNotify, busy } =
-    useStore();
+  const {
+    appAdmin,
+    team,
+    selectAdminBusiness,
+    rpc,
+    run,
+    setNotify,
+    busy,
+    user,
+  } = useStore();
   const tableNames: Record<string, string> = {
     profiles: "Unternehmensdaten",
     facilities: "Einrichtungen",
@@ -86,7 +94,11 @@ export function AppAdminPanel({ compact = false }: { compact?: boolean }) {
           {admins.map((a) => (
             <div className="list-row" key={a.user_id}>
               <div>
-                <strong>{a.email}</strong>
+                <strong>
+                  {a.user_id === user?.id
+                    ? "Dein App-Erstellerzugang"
+                    : a.email}
+                </strong>
                 <p>{a.is_active ? "Aktiv" : "Deaktiviert"}</p>
               </div>
               <Button
@@ -112,6 +124,11 @@ export function AppAdminPanel({ compact = false }: { compact?: boolean }) {
               </Button>
             </div>
           ))}
+          <h3>App-Änderungen · Version 5.0</h3>
+          <p>
+            Einrichtungsassistent, getrennte Heimpreislisten,
+            Einzelkundentermine und vereinfachte Mitarbeiteransichten.
+          </p>
           <h3>Admin-Protokoll</h3>
           {(appAdmin.audit || []).map((a) => (
             <div className="audit-row" key={a.id}>
@@ -119,15 +136,24 @@ export function AppAdminPanel({ compact = false }: { compact?: boolean }) {
                 {a.action === "business_opened"
                   ? "Unternehmen geöffnet"
                   : a.action === "data_changed"
-                    ? "Datensatz bearbeitet"
+                    ? a.details.operation === "DELETE"
+                      ? "Datensatz gelöscht"
+                      : a.details.operation === "INSERT"
+                        ? "Datensatz angelegt"
+                        : "Datensatz bearbeitet"
                     : a.action === "admin_access_changed"
                       ? "Admin-Zugang geändert"
                       : "App-Admin eingerichtet"}
               </strong>
               <p>
                 {dateLabel(a.created_at)} ·{" "}
-                {admins.find((admin) => admin.user_id === a.actor_id)?.email ||
-                  "SQL-Einrichtung"}{" "}
+                {a.actor_id === user?.id
+                  ? "Du"
+                  : admins.find((admin) => admin.user_id === a.actor_id)
+                      ?.email ||
+                    (a.actor_id
+                      ? "Unternehmen / Team"
+                      : "SQL-Einrichtung")}{" "}
                 ·{" "}
                 {businesses.find((b) => b.id === a.business_id)?.name ||
                   "App-Verwaltung"}

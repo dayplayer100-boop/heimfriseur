@@ -1,74 +1,41 @@
 import { useState } from "react";
 import { useStore } from "./store";
 import { Button, Input, Field, Modal } from "./ui";
-import { dateLabel, euro, today } from "./domain";
+import { dateLabel, today, fullName } from "./domain";
 import type { Cohort } from "./types";
-export function FacilityTools({ facilityId }: { facilityId: string }) {
+import { PriceLists } from "./PriceLists";
+export function FacilityTools({
+  facilityId,
+  groupsOnly = false,
+  groupId,
+}: {
+  facilityId: string;
+  groupsOnly?: boolean;
+  groupId?: string;
+}) {
   const { data, rpc, run, setNotify } = useStore();
-  const [edit, setEdit] = useState<Cohort | true | null>(null);
-  const [prices, setPrices] = useState<Record<string, string>>({});
+  const [edit, setEdit] = useState<Cohort | true | null>(null),
+    [assign, setAssign] = useState<Cohort | null>(null),
+    [selected, setSelected] = useState<string[]>([]);
   return (
     <div className="stack">
-      <section className="panel">
-        <h2>Preise in diesem Heim</h2>
-        <p>
-          Leer lassen: normale Preisliste verwenden. Abweichungen gelten für
-          neue Leistungen; gespeicherte Behandlungspreise bleiben erhalten.
-        </p>
-        {data.services
-          .filter((s) => s.is_active)
-          .map((s) => {
-            const stored = data.facility_service_prices.find(
-              (p) => p.facility_id === facilityId && p.service_id === s.id,
-            );
-            return (
-              <form
-                className="price-editor"
-                key={s.id}
-                onSubmit={async (e) => {
-                  e.preventDefault();
-                  const value =
-                    prices[s.id] ?? (stored ? String(stored.price) : "");
-                  const result = await run(async () => {
-                    const n =
-                      value === "" ? null : Number(value.replace(",", "."));
-                    if (n !== null && (!Number.isFinite(n) || n < 0))
-                      throw Error("Bitte einen gültigen Preis eingeben.");
-                    await rpc("set_facility_price", {
-                      p_facility: facilityId,
-                      p_service: s.id,
-                      p_price: n,
-                    });
-                    return true;
-                  });
-                  if (result) setNotify("Heimpreis gespeichert");
-                }}
-              >
-                <Input
-                  label={s.name + " · Standard " + euro(s.price)}
-                  inputMode="decimal"
-                  value={prices[s.id] ?? (stored ? String(stored.price) : "")}
-                  onChange={(v) => setPrices({ ...prices, [s.id]: v })}
-                />
-                <Button type="submit" variant="secondary">
-                  Preis speichern
-                </Button>
-              </form>
-            );
-          })}
-      </section>
+      {!groupsOnly && <PriceLists facilityId={facilityId} />}
       <section className="panel">
         <div className="section-heading">
-          <h2>Untergruppen / Besuchsrunden</h2>
+          <h2>Kundengruppen / Besuchsrunden</h2>
           <Button onClick={() => setEdit(true)}>Untergruppe hinzufügen</Button>
         </div>
         <p>
-          Zum Beispiel „Runde A“ diese Woche und „Runde B“ nächste Woche. Der
-          Ankertermin bestimmt die erste Woche. Kunden können die Runde wechseln
-          oder einen eigenen Rhythmus erhalten.
+          Erstelle zum Beispiel Runde A und Runde B. Öffne „Kunden zuordnen“, um
+          die Kunden auszuwählen. Der Ankertermin und der Wochenrhythmus
+          bestimmen, wann die Runde dran ist.
         </p>
         {data.cohorts
-          .filter((c) => c.facility_id === facilityId)
+          .filter(
+            (c) =>
+              c.facility_id === facilityId &&
+              (!groupId || c.group_id === groupId),
+          )
           .map((c) => (
             <div className="list-row" key={c.id}>
               <div>
@@ -80,18 +47,95 @@ export function FacilityTools({ facilityId }: { facilityId: string }) {
                   Kunden
                 </p>
               </div>
-              <Button variant="secondary" onClick={() => setEdit(c)}>
-                Ändern
-              </Button>
+              <div className="button-group">
+                <Button variant="secondary" onClick={() => setEdit(c)}>
+                  Ändern
+                </Button>
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    setAssign(c);
+                    setSelected(
+                      data.customers
+                        .filter((k) => k.cohort_id === c.id)
+                        .map((k) => k.id),
+                    );
+                  }}
+                >
+                  Kunden zuordnen
+                </Button>
+              </div>
             </div>
           ))}
       </section>
       {edit && (
         <CohortEditor
           facilityId={facilityId}
+          groupId={groupId}
           cohort={edit === true ? undefined : edit}
           onClose={() => setEdit(null)}
         />
+      )}
+      {assign && (
+        <Modal
+          title={"Kunden zuordnen: " + assign.name}
+          onClose={() => setAssign(null)}
+        >
+          <p>
+            Mehrere Kunden auswählen. Die bestehende nächste Behandlung bleibt
+            erhalten; ihren Termin kannst du im Kundenprofil ändern.
+          </p>
+          {data.customers
+            .filter(
+              (c) =>
+                c.facility_id === facilityId && c.group_id === assign.group_id,
+            )
+            .map((c) => (
+              <label className="check-row" key={c.id}>
+                <input
+                  type="checkbox"
+                  checked={selected.includes(c.id)}
+                  onChange={(e) =>
+                    setSelected(
+                      e.target.checked
+                        ? [...selected, c.id]
+                        : selected.filter((id) => id !== c.id),
+                    )
+                  }
+                />
+                {fullName(c)} · Zimmer {c.room_number || "–"}
+              </label>
+            ))}
+          <Button
+            onClick={async () => {
+              const ok = await run(async () => {
+                for (const c of data.customers.filter(
+                  (c) =>
+                    c.facility_id === facilityId &&
+                    c.group_id === assign.group_id,
+                )) {
+                  if (selected.includes(c.id) || c.cohort_id === assign.id)
+                    await rpc("save_customer", {
+                      p_data: {
+                        ...c,
+                        cohort_id: selected.includes(c.id) ? assign.id : null,
+                      },
+                      p_services: data.customer_default_services
+                        .filter((s) => s.customer_id === c.id)
+                        .map((s) => s.service_id),
+                    });
+                }
+                return true;
+              });
+              if (ok) {
+                setAssign(null);
+                setNotify("Kundengruppe gespeichert");
+              }
+            }}
+          >
+            Zuordnung speichern
+          </Button>
+        </Modal>
       )}
     </div>
   );
@@ -99,15 +143,17 @@ export function FacilityTools({ facilityId }: { facilityId: string }) {
 function CohortEditor({
   facilityId,
   cohort,
+  groupId,
   onClose,
 }: {
   facilityId: string;
   cohort?: Cohort;
+  groupId?: string;
   onClose: () => void;
 }) {
   const { data, rpc, run } = useStore();
   const [name, setName] = useState(cohort?.name || ""),
-    [group, setGroup] = useState(cohort?.group_id || ""),
+    [group, setGroup] = useState(cohort?.group_id || groupId || ""),
     [weeks, setWeeks] = useState(String(cohort?.recurrence_weeks || 5)),
     [date, setDate] = useState(cohort?.anchor_date || today());
   return (

@@ -1,3 +1,4 @@
+import { normalizeTime } from "./ScheduleFields";
 import { visitArea } from "./domain";
 import { PaymentDialog } from "./Payments";
 import { useAutosave } from "./useAutosave";
@@ -643,7 +644,7 @@ export function Visit({
                 await rpc("move_visit", {
                   p_appointment: id,
                   p_date: form.date,
-                  p_time: form.time,
+                  p_time: normalizeTime(form.time),
                   p_future: form.scope === "future",
                 });
                 return true;
@@ -664,8 +665,8 @@ export function Visit({
             <Input
               label="Startzeit"
               name="time"
-              type="time"
-              value={a.start_time}
+              inputMode="numeric"
+              value={a.start_time.slice(0, 5)}
               required
             />
             <Field label="Was möchtest du ändern?">

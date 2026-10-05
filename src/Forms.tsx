@@ -1,3 +1,5 @@
+import { ScheduleFields, normalizeDate, normalizeTime } from "./ScheduleFields";
+import { fullName } from "./domain";
 import { useState, type FormEvent } from "react";
 import { useStore } from "./store";
 import { Button, Field, Input, formObject } from "./ui";
@@ -113,6 +115,18 @@ export function EntityForm({
       obj.facility_id = facility;
       obj.recurrence_weeks = rhythm === "custom" ? custom : Number(rhythm);
       obj.preferred_weekday = Number(obj.preferred_weekday);
+    }
+    if (table === "groups" || table === "facilities") {
+      try {
+        obj.preferred_start_time = normalizeTime(
+          String(obj.preferred_start_time || "09:00"),
+        );
+      } catch (error) {
+        await run(async () => {
+          throw error;
+        });
+        return;
+      }
     }
     if (table === "services") {
       obj.price = Number(obj.price);
@@ -305,8 +319,8 @@ export function EntityForm({
             <Input
               label="Übliche Startzeit"
               name="preferred_start_time"
-              type="time"
-              value={values.preferred_start_time || "09:00"}
+              inputMode="numeric"
+              value={String(values.preferred_start_time || "09:00").slice(0, 5)}
             />
           </>
         )}
@@ -349,9 +363,9 @@ export function EntityForm({
             </Field>
             <Input
               label="Bevorzugte Startzeit"
-              type="time"
+              inputMode="numeric"
               name="preferred_start_time"
-              value={values.preferred_start_time || "09:00"}
+              value={String(values.preferred_start_time || "09:00").slice(0, 5)}
             />
           </>
         )}
@@ -415,7 +429,7 @@ export function VisitForm({
   facilityId?: string;
   onDone: (id: string) => void;
 }) {
-  const { data, rpc, run, setNotify } = useStore();
+  const { data, rpc, run, setNotify, isOwner, team, actorId } = useStore();
   const initial = data.groups.find((g) => g.id === groupId);
   const first =
     data.facilities.find(
@@ -423,25 +437,60 @@ export function VisitForm({
     ) || data.facilities[0];
   const [facility, setFacility] = useState(first?.id || ""),
     [group, setGroup] = useState(initial?.id || ""),
-    [cohort, setCohort] = useState("");
+    [cohort, setCohort] = useState(""),
+    [customer, setCustomer] = useState(""),
+    [date, setDate] = useState(today()),
+    [createGroup, setCreateGroup] = useState(false);
+  const permittedGroups = data.groups.filter(
+    (g) =>
+      isOwner ||
+      data.appointments.some(
+        (a) =>
+          a.facility_id === g.facility_id &&
+          (a.all_groups || a.group_id === g.id) &&
+          team?.assignments.some(
+            (x) => x.appointment_id === a.id && x.user_id === actorId,
+          ),
+      ),
+  );
   const [weeks, setWeeks] = useState(
       String(first?.visit_recurrence_weeks || 1),
     ),
-    [time, setTime] = useState(first?.preferred_start_time || "09:00");
+    [time, setTime] = useState(
+      (first?.preferred_start_time || "09:00").slice(0, 5),
+    );
+  if (createGroup)
+    return (
+      <>
+        <h3>Gruppe anlegen</h3>
+        <EntityForm
+          table="groups"
+          preset={{ facility_id: facility }}
+          onDone={(id) => {
+            setGroup(id);
+            setCreateGroup(false);
+          }}
+        />
+        <Button variant="secondary" onClick={() => setCreateGroup(false)}>
+          Zurück zur Terminplanung
+        </Button>
+      </>
+    );
   return (
     <form
       onSubmit={async (e) => {
         e.preventDefault();
         const obj = formObject(e);
         const id = await run(() =>
-          rpc("plan_visit_flexible", {
+          rpc("plan_customer_visit", {
             p_facility: facility || null,
             p_group: group || null,
-            p_date: obj.date || today(),
-            p_time: time || "09:00",
+            p_customer: customer || null,
+            p_date: normalizeDate(date),
+            p_time: normalizeTime(time || "09:00"),
             p_weeks: weeks ? Number(weeks) : null,
             p_all: obj.all === "on",
-            p_options: { cohort_id: cohort || null },
+            p_cohort: cohort || null,
           }),
         );
         if (id) {
@@ -457,9 +506,10 @@ export function VisitForm({
             const f = data.facilities.find((f) => f.id === e.target.value);
             setFacility(e.target.value);
             setGroup("");
+            setCustomer("");
             setCohort("");
             setWeeks(String(f?.visit_recurrence_weeks || 1));
-            setTime(f?.preferred_start_time || "09:00");
+            setTime((f?.preferred_start_time || "09:00").slice(0, 5));
           }}
         >
           <option value="">Noch offen – später zuordnen</option>
@@ -470,17 +520,22 @@ export function VisitForm({
           ))}
         </select>
       </Field>
-      <Field label="Wohnbereich">
+      <Field label="Gruppe">
         <select
           value={group}
           onChange={(e) => {
             setGroup(e.target.value);
+            setCustomer("");
             setCohort("");
           }}
         >
-          <option value="">Alle Wohnbereiche des Heims</option>
-          {data.groups
-            .filter((g) => g.facility_id === facility && !g.is_general)
+          <option value="">
+            {isOwner
+              ? "Alle Wohnbereiche des Heims"
+              : "Zugewiesene Gruppe auswählen"}
+          </option>
+          {permittedGroups
+            .filter((g) => g.facility_id === facility)
             .map((g) => (
               <option key={g.id} value={g.id}>
                 {g.name}
@@ -488,30 +543,62 @@ export function VisitForm({
             ))}
         </select>
       </Field>
-      <Field label="Untergruppe">
-        <select value={cohort} onChange={(e) => setCohort(e.target.value)}>
-          <option value="">Alle fälligen Untergruppen / Kunden</option>
-          {data.cohorts
+      {isOwner && facility && (
+        <Button variant="secondary" onClick={() => setCreateGroup(true)}>
+          Gruppe anlegen
+        </Button>
+      )}
+      <Field label="Kunde (optional)">
+        <select
+          value={customer}
+          onChange={(e) => {
+            setCustomer(e.target.value);
+            setWeeks(
+              e.target.value ? "" : String(first?.visit_recurrence_weeks || 1),
+            );
+          }}
+        >
+          <option value="">Alle fälligen Kunden der Gruppe</option>
+          {data.customers
             .filter(
               (c) =>
-                c.facility_id === facility && (!group || c.group_id === group),
+                c.facility_id === facility &&
+                (!group || c.group_id === group) &&
+                c.status === "Aktiv" &&
+                c.hair_request !== "Nein",
             )
             .map((c) => (
               <option key={c.id} value={c.id}>
-                {c.name}
+                {fullName(c)}
+                {c.room_number ? " · Zi. " + c.room_number : ""}
               </option>
             ))}
         </select>
       </Field>
-      <div className="form-grid">
-        <Input name="date" label="Datum" type="date" value={today()} />
-        <Input
-          label="Startzeit (bei Unklarheit 09:00)"
-          type="time"
-          value={time}
-          onChange={setTime}
-        />
-      </div>
+      {!customer && (
+        <Field label="Untergruppe">
+          <select value={cohort} onChange={(e) => setCohort(e.target.value)}>
+            <option value="">Alle fälligen Untergruppen / Kunden</option>
+            {data.cohorts
+              .filter(
+                (c) =>
+                  c.facility_id === facility &&
+                  (!group || c.group_id === group),
+              )
+              .map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+          </select>
+        </Field>
+      )}
+      <ScheduleFields
+        date={date}
+        setDate={setDate}
+        time={time}
+        setTime={setTime}
+      />
       <Field label="Wiederholung des Heimbesuchs">
         <select value={weeks} onChange={(e) => setWeeks(e.target.value)}>
           <option value="">Einmaliger Besuch</option>
@@ -522,10 +609,12 @@ export function VisitForm({
           ))}
         </select>
       </Field>
-      <label className="check-row">
-        <input type="checkbox" name="all" defaultChecked />
-        Fällige aktive Kunden automatisch hinzufügen
-      </label>
+      {!customer && (
+        <label className="check-row">
+          <input type="checkbox" name="all" defaultChecked />
+          Fällige aktive Kunden automatisch hinzufügen
+        </label>
+      )}
       <p className="muted">
         Das Heim kann jede Woche besucht werden. Kunden werden anhand ihres
         eigenen Rhythmus, ihrer Untergruppe und des nächsten Behandlungstermins

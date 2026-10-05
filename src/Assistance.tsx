@@ -6,8 +6,17 @@ export function openIntroduction() {
   window.dispatchEvent(new Event("heimfriseur-introduction"));
 }
 export function Assistance() {
-  const { team, user, demo, isOwner, rpc, run, setNotify, beforeNavigate } =
-    useStore();
+  const {
+    team,
+    user,
+    demo,
+    isOwner,
+    appAdmin,
+    rpc,
+    run,
+    setNotify,
+    beforeNavigate,
+  } = useStore();
   const [mode, setMode] = useState(""),
     [step, setStep] = useState(0),
     [category, setCategory] = useState("Fehler"),
@@ -17,7 +26,12 @@ export function Assistance() {
       user &&
       team &&
       !demo &&
-      team.membership.onboarding_completed === false
+      team.membership.onboarding_completed === false &&
+      !(
+        isOwner &&
+        !appAdmin?.is_admin &&
+        team.membership.setup_completed === false
+      )
     ) {
       setMode("tour");
       setStep(0);
@@ -89,9 +103,13 @@ export function Assistance() {
   }
   return (
     <>
-      <button className="help-launcher" onClick={() => setMode("menu")}>
+      <button
+        className="help-launcher"
+        aria-label="Hilfe & Feedback"
+        title="Hilfe & Feedback"
+        onClick={() => setMode("menu")}
+      >
         <HelpCircle size={18} />
-        Hilfe & Feedback
       </button>
       {mode === "menu" && (
         <Modal title="Hilfe & Feedback" onClose={() => setMode("")}>

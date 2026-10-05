@@ -2812,3 +2812,70 @@ code {
 .app-admin-panel.compact p {
   margin-bottom: 12px;
 }
+/* V5: mobile Eingaben und ruhige Hilfe */
+.password-field {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.password-field input {
+  width: 100%;
+  padding-right: 78px;
+}
+.password-field > .icon-button {
+  position: absolute;
+  right: 4px;
+}
+.password-recent {
+  position: absolute;
+  right: 54px;
+  font-family: monospace;
+  font-size: 18px;
+  color: var(--text);
+  pointer-events: none;
+}
+.help-launcher {
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  padding: 0;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.9;
+}
+.setup-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 20px;
+}
+.setup-steps button {
+  padding: 12px 16px;
+  border: 1px solid #dce5e0;
+  border-radius: 12px;
+  background: white;
+  min-height: 44px;
+}
+.setup-steps .active {
+  background: #153e39;
+  color: white;
+}
+.cost-chart {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  flex-wrap: wrap;
+  margin-bottom: 24px;
+}
+.cost-chart svg {
+  width: 180px;
+  height: 180px;
+  flex-shrink: 0;
+}
+.visit-customers {
+  font-weight: 600;
+  color: #285f57;
+}

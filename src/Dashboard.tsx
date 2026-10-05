@@ -1,4 +1,4 @@
-import { visitArea } from "./domain";
+import { visitArea, scheduledCustomerLabel } from "./domain";
 import {
   CalendarDays,
   Users,
@@ -21,7 +21,7 @@ export function VisitCard({
   onOpen: () => void;
   featured?: boolean;
 }) {
-  const { data, isOwner, team, actorId } = useStore();
+  const { data, isOwner, team } = useStore();
   const s = visitStats(data, a);
   return (
     <article className={`visit-card ${featured ? "featured" : ""}`}>
@@ -34,6 +34,20 @@ export function VisitCard({
       </div>
       <h3>{data.facilities.find((f) => f.id === a.facility_id)?.name}</h3>
       <p>{visitArea(data, a)}</p>
+      <p className="visit-customers">
+        {s.members
+          .filter((x) => x.status === "Offen" || x.status === "In Behandlung")
+          .slice(0, 3)
+          .map((x) => {
+            const c = data.customers.find((c) => c.id === x.customer_id);
+            return c
+              ? [c.first_name, c.last_name].filter(Boolean).join(" ") +
+                  (c.room_number ? " · Zi. " + c.room_number : "")
+              : "";
+          })
+          .filter(Boolean)
+          .join(" / ")}
+      </p>
       {isOwner && (
         <p className="muted">
           Team:{" "}
@@ -96,7 +110,7 @@ export function Dashboard({
   navigate: (p: string) => void;
   plan: () => void;
 }) {
-  const { data, isOwner, team, actorId } = useStore();
+  const { data, isOwner, team, actorId, can, appAdmin } = useStore();
   const date = today(),
     p = data.profiles[0];
   const todays = data.appointments.filter(
@@ -139,13 +153,13 @@ export function Dashboard({
           year: "numeric",
           timeZone: "Europe/Berlin",
         }).format(new Date())}
-        title={`Guten Tag${p?.first_name ? ", " + p.first_name : ""}.`}
+        title={`Guten Tag${!appAdmin?.is_admin && p?.first_name ? ", " + p.first_name : ""}.`}
         description="Alles bereit für deinen nächsten Besuch."
         action={
-          isOwner && (
+          (isOwner || can("edit_schedule")) && (
             <Button onClick={plan}>
               <CalendarDays size={18} />
-              Besuch planen
+              Termin hinzufügen
             </Button>
           )
         }
@@ -227,7 +241,7 @@ export function Dashboard({
                   : "Dein Geschäftsführer kann dir Besuche zuweisen."
               }
               action={
-                isOwner ? (
+                isOwner || can("edit_schedule") ? (
                   <Button onClick={plan}>Termin hinzufügen</Button>
                 ) : undefined
               }
@@ -267,6 +281,9 @@ export function Dashboard({
                     </strong>
                     <span>
                       {visitArea(data, a)} · {a.start_time.slice(0, 5)} Uhr
+                      {a.selected_customer_id
+                        ? " · " + scheduledCustomerLabel(data, a)
+                        : ""}
                     </span>
                   </div>
                   <span className="customer-count">

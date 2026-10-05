@@ -72,7 +72,7 @@ export function TeamInvite() {
   );
 }
 export function TeamSettings() {
-  const { team, demo, rpc, run, setNotify, data } = useStore();
+  const { team, demo, rpc, run, setNotify, data, appAdmin } = useStore();
   const [permissionMember, setPermissionMember] = useState<string | null>(null);
   const [email, setEmail] = useState(""),
     [link, setLink] = useState(""),
@@ -208,37 +208,39 @@ export function TeamSettings() {
             </div>
           ))}
       </section>
-      <section className="panel">
-        <h2>Änderungsprotokoll</h2>
-        <p className="muted">
-          Die letzten 100 wichtigen Änderungen. Behandlungsnotizen erscheinen
-          hier nicht.
-        </p>
-        {team.audit.map((e) => (
-          <div className="audit-row" key={e.id}>
-            <strong>{actionLabels[e.action] || e.action}</strong>
-            <span>
-              {team.members.find((m) => m.user_id === e.actor_id)
-                ?.display_name || "Geschäftsführer"}{" "}
-              ·{" "}
-              {new Date(e.created_at).toLocaleString("de-DE", {
-                timeZone: "Europe/Berlin",
-              })}
-            </span>
-            {e.action === "treatment_corrected" && (
-              <p>
-                {e.details.reason} · Preis {euro(e.details.before.price)} →{" "}
-                {euro(e.details.after.price)} · Material{" "}
-                {euro(e.details.before.material)} →{" "}
-                {euro(e.details.after.material)}
-              </p>
-            )}
-          </div>
-        ))}
-        {!team.audit.length && (
-          <p className="muted">Noch keine Teamänderungen.</p>
-        )}
-      </section>
+      {appAdmin?.is_admin && (
+        <section className="panel">
+          <h2>Änderungsprotokoll</h2>
+          <p className="muted">
+            Die letzten 100 wichtigen Änderungen. Behandlungsnotizen erscheinen
+            hier nicht.
+          </p>
+          {team.audit.map((e) => (
+            <div className="audit-row" key={e.id}>
+              <strong>{actionLabels[e.action] || e.action}</strong>
+              <span>
+                {team.members.find((m) => m.user_id === e.actor_id)
+                  ?.display_name || "Geschäftsführer"}{" "}
+                ·{" "}
+                {new Date(e.created_at).toLocaleString("de-DE", {
+                  timeZone: "Europe/Berlin",
+                })}
+              </span>
+              {e.action === "treatment_corrected" && (
+                <p>
+                  {e.details.reason} · Preis {euro(e.details.before.price)} →{" "}
+                  {euro(e.details.after.price)} · Material{" "}
+                  {euro(e.details.before.material)} →{" "}
+                  {euro(e.details.after.material)}
+                </p>
+              )}
+            </div>
+          ))}
+          {!team.audit.length && (
+            <p className="muted">Noch keine Teamänderungen.</p>
+          )}
+        </section>
+      )}
       {permissionMember && (
         <PermissionsEditor
           member={team.members.find((m) => m.id === permissionMember)!}

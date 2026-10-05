@@ -45,7 +45,7 @@ export function Facilities({
   navigate: (p: string) => void;
   edit: Edit;
 }) {
-  const { data } = useStore();
+  const { data, isOwner } = useStore();
   const [q, setQ] = useState("");
   return (
     <>
@@ -54,9 +54,11 @@ export function Facilities({
         title="Einrichtungen"
         description="Alle Häuser und Wohnbereiche an einem Ort."
         action={
-          <PlusButton onClick={() => edit("facilities")}>
-            Einrichtung
-          </PlusButton>
+          isOwner && (
+            <PlusButton onClick={() => edit("facilities")}>
+              Einrichtung
+            </PlusButton>
+          )
         }
       />
       <div className="toolbar">
@@ -138,9 +140,11 @@ export function Facilities({
           title="Noch keine Einrichtungen"
           text="Lege deine erste Einrichtung an."
           action={
-            <Button onClick={() => edit("facilities")}>
-              Einrichtung erstellen
-            </Button>
+            isOwner && (
+              <Button onClick={() => edit("facilities")}>
+                Einrichtung erstellen
+              </Button>
+            )
           }
         />
       )}
@@ -160,7 +164,7 @@ export function FacilityDetail({
   plan: (group?: string, facility?: string) => void;
   confirmDelete: (table: Table, row: Row) => void;
 }) {
-  const { data } = useStore();
+  const { data, isOwner, can } = useStore();
   const [tab, setTab] = useState("Übersicht");
   const f = data.facilities.find((f) => f.id === id);
   if (!f) return <Empty title="Einrichtung nicht gefunden" />;
@@ -184,27 +188,37 @@ export function FacilityDetail({
         description={`${f.street} ${f.house_number} · ${f.postal_code} ${f.city}`}
         action={
           <div className="button-group">
-            <Button variant="secondary" onClick={() => edit("facilities", f)}>
-              Bearbeiten
-            </Button>
-            <Button onClick={() => plan(undefined, id)}>Besuch planen</Button>
+            {isOwner && (
+              <Button variant="secondary" onClick={() => edit("facilities", f)}>
+                Bearbeiten
+              </Button>
+            )}
+            {(isOwner || can("edit_schedule")) && (
+              <Button onClick={() => plan(undefined, id)}>Besuch planen</Button>
+            )}
           </div>
         }
       />
       <div className="tabs">
-        {["Übersicht", "Gruppen", "Kunden", "Besuche", "Preise & Runden"].map(
-          (t) => (
-            <button
-              key={t}
-              className={tab === t ? "active" : ""}
-              onClick={() => setTab(t)}
-            >
-              {t}
-            </button>
-          ),
-        )}
+        {[
+          "Übersicht",
+          "Gruppen",
+          "Kunden",
+          "Besuche",
+          ...(isOwner ? ["Preise & Runden"] : []),
+        ].map((t) => (
+          <button
+            key={t}
+            className={tab === t ? "active" : ""}
+            onClick={() => setTab(t)}
+          >
+            {t}
+          </button>
+        ))}
       </div>
-      {tab === "Preise & Runden" && <FacilityTools facilityId={id} />}
+      {tab === "Preise & Runden" && isOwner && (
+        <FacilityTools facilityId={id} />
+      )}
       {tab === "Übersicht" && (
         <div className="detail-columns">
           <section className="panel">
@@ -240,12 +254,14 @@ export function FacilityDetail({
                 <p>{f.notes}</p>
               </div>
             )}
-            <Button
-              variant="danger-text"
-              onClick={() => confirmDelete("facilities", f)}
-            >
-              Einrichtung löschen
-            </Button>
+            {isOwner && (
+              <Button
+                variant="danger-text"
+                onClick={() => confirmDelete("facilities", f)}
+              >
+                Einrichtung löschen
+              </Button>
+            )}
           </section>
           <section className="panel">
             <h2>Wohnbereiche</h2>
@@ -269,11 +285,13 @@ export function FacilityDetail({
                 <ArrowUpRight size={18} />
               </button>
             ))}
-            <PlusButton
-              onClick={() => edit("groups", undefined, { facility_id: id })}
-            >
-              Wohnbereich
-            </PlusButton>
+            {isOwner && (
+              <PlusButton
+                onClick={() => edit("groups", undefined, { facility_id: id })}
+              >
+                Wohnbereich
+              </PlusButton>
+            )}
           </section>
         </div>
       )}
@@ -281,11 +299,13 @@ export function FacilityDetail({
         <>
           <div className="section-heading">
             <h2>{groups.length} Wohnbereiche</h2>
-            <PlusButton
-              onClick={() => edit("groups", undefined, { facility_id: id })}
-            >
-              Wohnbereich
-            </PlusButton>
+            {isOwner && (
+              <PlusButton
+                onClick={() => edit("groups", undefined, { facility_id: id })}
+              >
+                Wohnbereich
+              </PlusButton>
+            )}
           </div>
           <div className="card-grid">
             {groups.map((g) => (
@@ -315,20 +335,25 @@ export function FacilityDetail({
           )}
         </>
       )}
+      {tab === "Gruppen" && isOwner && (
+        <FacilityTools facilityId={id} groupsOnly />
+      )}
       {tab === "Kunden" && (
         <>
           <div className="section-heading">
             <h2>{customers.length} Kunden</h2>
-            <PlusButton
-              onClick={() =>
-                edit("customers", undefined, {
-                  facility_id: id,
-                  group_id: groups[0]?.id || "",
-                })
-              }
-            >
-              Kunde
-            </PlusButton>
+            {(isOwner || can("add_customers")) && (
+              <PlusButton
+                onClick={() =>
+                  edit("customers", undefined, {
+                    facility_id: id,
+                    group_id: groups[0]?.id || "",
+                  })
+                }
+              >
+                Kunde
+              </PlusButton>
+            )}
           </div>
           <CustomerList customers={customers} navigate={navigate} />
         </>
@@ -370,9 +395,20 @@ export function GroupDetail({
   plan: (id?: string) => void;
   confirmDelete: (table: Table, row: Row) => void;
 }) {
-  const { data } = useStore();
+  const { data, isOwner, can } = useStore();
   const g = data.groups.find((g) => g.id === id);
-  if (!g) return <Empty title="Wohnbereich nicht gefunden" />;
+  if (!g)
+    return (
+      <Empty
+        title="Gruppe nicht verfügbar"
+        text="Wähle eine vorhandene Gruppe in der Einrichtung oder lege dort eine neue an."
+        action={
+          <Button onClick={() => navigate("facilities")}>
+            Einrichtungen öffnen
+          </Button>
+        }
+      />
+    );
   const visits = data.appointments.filter((a) => a.group_id === id),
     last = visits
       .filter((a) => a.status === "Abgeschlossen")
@@ -398,10 +434,14 @@ export function GroupDetail({
         eyebrow="WOHNBEREICH"
         action={
           <div className="button-group">
-            <Button variant="secondary" onClick={() => edit("groups", g)}>
-              Bearbeiten
-            </Button>
-            <Button onClick={() => plan(id)}>Besuch planen</Button>
+            {isOwner && (
+              <Button variant="secondary" onClick={() => edit("groups", g)}>
+                Bearbeiten
+              </Button>
+            )}
+            {(isOwner || can("edit_schedule")) && (
+              <Button onClick={() => plan(id)}>Besuch planen</Button>
+            )}
           </div>
         }
       />
@@ -444,24 +484,34 @@ export function GroupDetail({
       </section>
       <div className="section-heading next-heading">
         <h2>Kunden im Wohnbereich</h2>
-        <PlusButton
-          onClick={() =>
-            edit("customers", undefined, {
-              facility_id: g.facility_id,
-              group_id: id,
-            })
-          }
-        >
-          Kunde
-        </PlusButton>
+        {(isOwner || can("add_customers")) && (
+          <PlusButton
+            onClick={() =>
+              edit("customers", undefined, {
+                facility_id: g.facility_id,
+                group_id: id,
+              })
+            }
+          >
+            Kunde
+          </PlusButton>
+        )}
       </div>
       <CustomerList
         customers={data.customers.filter((c) => c.group_id === id)}
         navigate={navigate}
       />
-      <Button variant="danger-text" onClick={() => confirmDelete("groups", g)}>
-        Wohnbereich löschen
-      </Button>
+      {isOwner && (
+        <>
+          <FacilityTools facilityId={g.facility_id} groupId={g.id} groupsOnly />
+          <Button
+            variant="danger-text"
+            onClick={() => confirmDelete("groups", g)}
+          >
+            Wohnbereich löschen
+          </Button>
+        </>
+      )}
     </>
   );
 }
@@ -520,7 +570,7 @@ export function Customers({
   navigate: (p: string) => void;
   edit: Edit;
 }) {
-  const { data } = useStore();
+  const { data, isOwner, can } = useStore();
   const [q, setQ] = useState(""),
     [facility, setFacility] = useState(""),
     [group, setGroup] = useState(""),
@@ -541,7 +591,9 @@ export function Customers({
         title="Kunden"
         description="Stammdaten, Leistungen und die letzte Behandlung."
         action={
-          <PlusButton onClick={() => edit("customers")}>Kunde</PlusButton>
+          (isOwner || can("add_customers")) && (
+            <PlusButton onClick={() => edit("customers")}>Kunde</PlusButton>
+          )
         }
       />
       <div className="toolbar filters">

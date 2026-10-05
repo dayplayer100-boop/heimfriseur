@@ -185,3 +185,14 @@ export function visitArea(data: Data, appointment: Appointment) {
     : data.groups.find((g) => g.id === appointment.group_id)?.name ||
         "Wohnbereich noch offen";
 }
+
+export function scheduledCustomerLabel(data: Data, appointment: Appointment) {
+  if (!appointment.selected_customer_id) return "";
+  const customer = data.customers.find(
+    (c) => c.id === appointment.selected_customer_id,
+  );
+  return customer
+    ? fullName(customer) +
+        (customer.room_number ? " · Zi. " + customer.room_number : "")
+    : "";
+}

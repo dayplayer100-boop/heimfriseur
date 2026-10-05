@@ -24,6 +24,9 @@ await db.exec(
   readFileSync("supabase/migrations/003_practical_workflow.sql", "utf8"),
 );
 await db.exec(readFileSync("supabase/migrations/004_app_admin.sql", "utf8"));
+await db.exec(
+  readFileSync("supabase/migrations/005_clear_workflows.sql", "utf8"),
+);
 await q("select bootstrap_app_admin('admin@test.invalid')");
 await q("update app_admins set onboarding_completed=true where user_id=$1", [
   A,
@@ -87,11 +90,11 @@ let failSave = false,
   failAll = false,
   delaySave = 0;
 const errors = [];
-async function pageFor(actor, email) {
+async function pageFor(actor, email, setupCompleted = true) {
   await db.exec("reset role");
   await q(
-    "update business_memberships set onboarding_completed=true where user_id=$1",
-    [actor],
+    "update business_memberships set onboarding_completed=true,setup_completed=$2 where user_id=$1",
+    [actor, setupCompleted],
   );
   const context = await browser.newContext({
     viewport: { width: 390, height: 844 },
@@ -228,8 +231,8 @@ async function pageFor(actor, email) {
   await page.goto(process.env.APP_URL || "http://localhost:5173");
   await page
     .getByRole("heading", {
-      name: actor === A ? "App-Admin" : /Guten Tag/,
-      exact: actor === A,
+      name: setupCompleted ? /Guten Tag/ : "Dein Unternehmen einrichten",
+      exact: false,
     })
     .waitFor();
   return page;
@@ -237,7 +240,7 @@ async function pageFor(actor, email) {
 try {
   const employee = await pageFor(E, "employee@test.invalid");
   assert.equal(await employee.getByText("DEIN MONAT IM BLICK").count(), 0);
-  assert.equal(await employee.locator(".bottom-nav a").count(), 2);
+  assert.equal(await employee.locator(".bottom-nav a").count(), 4);
   await employee
     .getByRole("button", { name: "Besuch öffnen", exact: true })
     .click();
@@ -391,17 +394,19 @@ try {
     .getByRole("heading", { name: "Unternehmenszugang nicht verfügbar" })
     .waitFor();
   const admin = await pageFor(A, "admin@test.invalid");
-  await admin
-    .getByRole("heading", { name: "App-Admin", exact: true })
-    .waitFor();
+  assert.equal(await admin.locator(".app-admin-panel").count(), 0);
   await db.exec("reset role");
   const business = (
     await q("select id from businesses where owner_user_id=$1", [O])
   )[0].id;
-  await admin
-    .getByLabel("Unternehmen verwalten", { exact: true })
-    .selectOption(business);
-  await admin.getByRole("heading", { name: /Guten Tag/ }).waitFor();
+  assert.equal(
+    await admin.evaluate(
+      () =>
+        JSON.parse(sessionStorage.getItem("heimfriseur-admin-business"))
+          .businessId,
+    ),
+    business,
+  );
   await admin.goto(
     (process.env.APP_URL || "http://localhost:5173") + "/#facility/" + facility,
   );
@@ -426,9 +431,9 @@ try {
       .user_id,
     O,
   );
-  await admin
-    .getByLabel("Unternehmen verwalten", { exact: true })
-    .selectOption("");
+  await admin.goto(
+    (process.env.APP_URL || "http://localhost:5173") + "/#settings/App-Admin",
+  );
   await admin
     .getByRole("button", {
       name: "App-Admin hinzufügen / aktivieren",
@@ -445,6 +450,48 @@ try {
     })
     .click();
   await admin.getByText("second@test.invalid", { exact: true }).waitFor();
+  const setupOwner = await pageFor(O, "owner@test.invalid", false);
+  await setupOwner
+    .getByLabel("Firmenname", { exact: true })
+    .fill("Fiktiver Salon");
+  await setupOwner
+    .getByRole("button", { name: "Speichern", exact: true })
+    .click();
+  await setupOwner
+    .getByRole("heading", { name: "Heime", exact: true })
+    .waitFor();
+  await setupOwner
+    .getByRole("button", { name: "5. Preise", exact: true })
+    .click();
+  await setupOwner
+    .getByRole("button", { name: "Einrichtung abschließen", exact: true })
+    .click();
+  await setupOwner.getByRole("heading", { name: /Guten Tag/ }).waitFor();
+  await db.exec("reset role");
+  assert.equal(
+    (
+      await q(
+        "select setup_completed from business_memberships where user_id=$1",
+        [O],
+      )
+    )[0].setup_completed,
+    true,
+  );
+  await setupOwner.goto(
+    (process.env.APP_URL || "http://localhost:5173") + "/#settings/Team",
+  );
+  assert.equal(
+    await setupOwner
+      .getByRole("heading", { name: "Änderungsprotokoll", exact: true })
+      .count(),
+    0,
+  );
+  assert.equal(
+    await setupOwner
+      .getByRole("button", { name: "App-Admin", exact: true })
+      .count(),
+    0,
+  );
   for (const page of [employee, second, owner, admin])
     assert.equal(
       await page.evaluate(

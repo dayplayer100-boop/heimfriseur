@@ -5,7 +5,7 @@ import type { Permission, TeamMember } from "./types";
 export const permissionLabels: [Permission, string][] = [
   ["edit_customers", "Kundendaten und Kundenrhythmus ändern"],
   ["add_customers", "Neue Kunden in zugewiesenen Wohnbereichen anlegen"],
-  ["edit_schedule", "Zugewiesene Termine einzeln verschieben"],
+  ["edit_schedule", "Zugewiesene Termine planen und verschieben"],
   ["override_prices", "Endpreis eigener Behandlungen ändern"],
   ["record_payments", "Zahlungen eigener Behandlungen erfassen"],
   ["view_billing", "Abrechnungskontakte sehen und ändern"],

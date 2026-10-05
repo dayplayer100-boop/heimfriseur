@@ -19,6 +19,7 @@ export interface Profile extends Base {
   logo_url: string;
 }
 export interface Facility extends Base {
+  price_list_customized?: boolean;
   visit_recurrence_weeks?: number;
   preferred_weekday?: number;
   preferred_start_time?: string;
@@ -68,6 +69,7 @@ export interface DefaultService extends Base {
   service_id: string;
 }
 export interface Appointment extends Base {
+  selected_customer_id?: string | null;
   auto_include_due?: boolean;
   all_groups?: boolean;
   cohort_id?: string | null;
@@ -230,6 +232,7 @@ export interface TeamMember {
   display_name: string;
   permissions?: Partial<Record<Permission, boolean>>;
   onboarding_completed?: boolean;
+  setup_completed?: boolean;
   is_active: boolean;
 }
 export interface Assignment {

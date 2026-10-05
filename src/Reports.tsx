@@ -151,6 +151,54 @@ export function Reports({ navigate }: { navigate: (p: string) => void }) {
           Individuelle Arbeitszeit wird nicht aus Zuweisungen geschätzt.
         </p>
       )}
+      <section className="panel cost-chart">
+        <div>
+          <h2>Umsatz und Materialkosten</h2>
+          <p>
+            Material: <strong>{euro(m.material)}</strong>
+          </p>
+          <p>
+            Umsatz nach Material: <strong>{euro(m.net)}</strong>
+          </p>
+          <p className="muted">
+            Weitere Betriebsausgaben sind hier nicht erfasst.
+          </p>
+        </div>
+        <svg
+          viewBox="0 0 120 120"
+          role="img"
+          aria-label={`Materialkosten ${euro(m.material)}, Umsatz nach Material ${euro(m.net)}`}
+        >
+          <circle
+            cx="60"
+            cy="60"
+            r="44"
+            fill="none"
+            stroke={m.revenue ? "#16746c" : "#e3e9e6"}
+            strokeWidth="16"
+          />
+          <circle
+            cx="60"
+            cy="60"
+            r="44"
+            fill="none"
+            stroke="#c19b60"
+            strokeWidth="16"
+            pathLength="100"
+            strokeDasharray={`${m.revenue > 0 ? Math.min(100, Math.max(0, (m.material / m.revenue) * 100)) : 0} 100`}
+            transform="rotate(-90 60 60)"
+          />
+          <text x="60" y="57" textAnchor="middle" fontSize="9" fill="#52605b">
+            Umsatz
+          </text>
+          <text x="60" y="70" textAnchor="middle" fontSize="11" fill="#153e39">
+            {euro(m.revenue)}
+          </text>
+        </svg>
+        {m.material > m.revenue && (
+          <p className="warning">Materialkosten übersteigen den Umsatz.</p>
+        )}
+      </section>
       <div className="metric-grid">
         {cards.map(([label, value, Icon]) => (
           <section

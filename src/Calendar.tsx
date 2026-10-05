@@ -1,3 +1,4 @@
+import { scheduledCustomerLabel } from "./domain";
 import { visitArea } from "./domain";
 import { useState } from "react";
 import { ChevronLeft, ChevronRight, CalendarDays } from "lucide-react";
@@ -11,7 +12,7 @@ export function Calendar({
   navigate: (p: string) => void;
   plan: () => void;
 }) {
-  const { data, isOwner } = useStore();
+  const { data, isOwner, can } = useStore();
   const [view, setView] = useState("Liste"),
     [anchor, setAnchor] = useState(today());
   const date = new Date(anchor + "T12:00:00Z");
@@ -61,7 +62,7 @@ export function Calendar({
         title="Kalender"
         description="Regelmäßige Besuche. Ein klarer Überblick."
         action={
-          isOwner && (
+          (isOwner || can("edit_schedule")) && (
             <Button onClick={plan}>
               <CalendarDays size={18} />
               Besuch planen
@@ -146,6 +147,9 @@ export function Calendar({
                   }{" "}
                   Kunden
                 </p>
+                {a.selected_customer_id && (
+                  <p>{scheduledCustomerLabel(data, a)}</p>
+                )}
               </div>
               <Status status={a.status} />
             </button>
@@ -154,7 +158,7 @@ export function Calendar({
             <Empty
               title="Keine Besuche in diesem Zeitraum"
               action={
-                isOwner ? (
+                isOwner || can("edit_schedule") ? (
                   <Button onClick={plan}>Besuch planen</Button>
                 ) : undefined
               }
@@ -190,6 +194,9 @@ export function Calendar({
                       }
                     </span>
                     <small>{visitArea(data, a)}</small>
+                    {a.selected_customer_id && (
+                      <small>{scheduledCustomerLabel(data, a)}</small>
+                    )}
                   </button>
                 ))}
             </div>

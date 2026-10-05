@@ -1,3 +1,5 @@
+import { SetupGuide } from "./SetupGuide";
+import { PasswordInput } from "./PasswordInput";
 import { AppAdminPanel } from "./AppAdmin";
 import { Assistance } from "./Assistance";
 import { AppUpdate } from "./AppUpdate";
@@ -35,7 +37,7 @@ import { Visit, TreatmentView } from "./Visit";
 import { Reports } from "./Reports";
 import { Settings as SettingsPage } from "./Settings";
 import { EntityForm, VisitForm } from "./Forms";
-import { Button, Modal, Input, formObject } from "./ui";
+import { Button, Modal, formObject } from "./ui";
 import type { Table, Row } from "./types";
 const navigation = [
   ["dashboard", "Dashboard", LayoutDashboard],
@@ -66,7 +68,9 @@ export function App() {
   } = store;
   const visibleNavigation = isOwner
     ? navigation
-    : navigation.filter(([key]) => ["dashboard", "calendar"].includes(key));
+    : navigation.filter(([key]) =>
+        ["dashboard", "calendar", "facilities", "customers"].includes(key),
+      );
   const [path, setPath] = useState(location.hash.slice(1) || "dashboard"),
     [modal, setModal] = useState<{
       type: "edit" | "plan" | "delete";
@@ -114,7 +118,7 @@ export function App() {
         can(row ? "edit_customers" : "add_customers"))) &&
     setModal({ type: "edit", table, row, preset });
   const plan = (group?: string, facility?: string) => {
-    if (!isOwner) return;
+    if (!isOwner && !can("edit_schedule")) return;
     setModal({ type: "plan", group, facility });
   };
   const confirmDelete = (table: Table, row: Row) =>
@@ -167,12 +171,7 @@ export function App() {
             }
           }}
         >
-          <Input
-            label="Neues Passwort"
-            name="password"
-            type="password"
-            required
-          />
+          <PasswordInput label="Neues Passwort" newPassword />
           <Button type="submit">Passwort speichern</Button>
         </form>
       </section>
@@ -198,6 +197,13 @@ export function App() {
       </section>
     );
   else if (
+    isOwner &&
+    !store.appAdmin?.is_admin &&
+    !demo &&
+    team?.membership.setup_completed === false
+  )
+    content = <SetupGuide navigate={navigate} />;
+  else if (
     !isOwner &&
     ![
       "dashboard",
@@ -206,11 +212,18 @@ export function App() {
       "treatment",
       "settings",
       "customer",
+      "customers",
+      "facilities",
+      "facility",
+      "group",
     ].includes(page)
   )
     content = <Dashboard navigate={navigate} plan={() => {}} />;
   else
     switch (page) {
+      case "setup":
+        content = <SetupGuide navigate={navigate} />;
+        break;
       case "calendar":
         content = <Calendar navigate={navigate} plan={() => plan()} />;
         break;
@@ -316,9 +329,11 @@ export function App() {
                 </span>
                 <div>
                   <strong>
-                    {team?.membership.display_name ||
-                      data.profiles[0]?.first_name ||
-                      "Mein Konto"}
+                    {store.appAdmin?.is_admin
+                      ? "App-Verwaltung"
+                      : team?.membership.display_name ||
+                        data.profiles[0]?.first_name ||
+                        "Mein Konto"}
                   </strong>
                   <span>
                     {data.profiles[0]?.business_name || "HeimFriseur"}
@@ -393,10 +408,7 @@ export function App() {
               </div>
             )}
             <AppUpdate />
-            <main>
-              {store.appAdmin?.is_admin && team && <AppAdminPanel compact />}
-              {content}
-            </main>
+            <main>{content}</main>
             <footer className="app-footer">
               <Scissors size={14} />
               <span>HeimFriseur</span>

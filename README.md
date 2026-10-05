@@ -1,3 +1,9 @@
+# HeimFriseur – Version 5.0
+
+Einrichtungsassistent, eigenständige Heimpreislisten, direkte Kundengruppenzuordnung, Einzelkundentermine mit Zahleneingabe, ruhige Mitarbeiteransichten und getrennte technische App-Verwaltung. Vollständige Update-Anleitung: [EINFACHER-ARBEITSALLTAG-UPDATE.md](EINFACHER-ARBEITSALLTAG-UPDATE.md).
+
+**Aktuell aktualisieren:** Nach bereits ausgeführten Migrationen 001–004 ausschließlich `005_clear_workflows.sql` einmal ausführen. Danach `npm ci`, `npm run build` (Ausgabe `dist`) und auf der vorhandenen Firebase-Site veröffentlichen. Die früheren Abschnitte unten dokumentieren ältere Versionen; deren Migrationen nicht erneut ausführen.
+
 # HeimFriseur – Version 4.0 mit App-Admin
 
 Zusätzlich zur Team- und Alltagsversion können ausdrücklich eingerichtete App-Admins alle Unternehmen auswählen und dort mit Geschäftsführerrechten arbeiten. Einrichtung, SQL-Bootstrap und Grenzen: [APP-ADMIN-UPDATE.md](APP-ADMIN-UPDATE.md).
