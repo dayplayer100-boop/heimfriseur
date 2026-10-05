@@ -32,7 +32,11 @@ export function friendly(e: unknown) {
     return "Dieser Besuch wurde gleichzeitig geändert. Bitte erneut versuchen.";
   if (x.code === "PGRST116")
     return "Dieser Datensatz ist nicht verfügbar. Bitte erneut laden.";
-  if (x.code === "42501") return "Du hast keinen Zugriff auf diese Daten.";
+  if (x.code === "42501")
+    return x.message?.includes("E-Mail-Adresse bestätigen") ||
+      x.message?.includes("Zwei-Faktor")
+      ? x.message
+      : "Du hast keinen Zugriff auf diese Daten.";
   if (x.code === "PGRST202" || x.code === "42P01")
     return "Die Datenbank ist noch nicht eingerichtet. Bitte die mitgelieferte Supabase-Migration ausführen.";
   if (x.message?.includes("Failed to fetch"))
@@ -43,6 +47,8 @@ export function friendly(e: unknown) {
   );
 }
 interface Store {
+  mfaRequired: boolean;
+  unlockMfa: () => Promise<void>;
   appAdmin: AppAdminContext | null;
   selectAdminBusiness: (id: string) => Promise<void>;
   team: TeamContext | null;
@@ -79,6 +85,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
     [notify, setNotify] = useState("");
+  const [mfaRequired, setMfaRequired] = useState(false);
+  const mfaBlocked = useRef(false);
   const [appAdmin, setAppAdmin] = useState<AppAdminContext | null>(null);
   const [team, setTeam] = useState<TeamContext | null>(null);
   const navigationGuard = useRef<(() => Promise<boolean>) | null>(null);
@@ -86,6 +94,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const lock = useRef(false);
   const generation = useRef(0);
   async function refresh() {
+    if (mfaBlocked.current) {
+      setLoading(false);
+      return;
+    }
     const version = ++generation.current;
     if (demo) {
       repository.current ||= new DemoRepository();
@@ -195,6 +207,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         // Keep the current editor and its draft during a connection failure.
         // Permission revocation clears sensitive cached data immediately.
         if ((e as { code?: string }).code === "42501") {
+          if ((e as { message?: string }).message?.includes("Zwei-Faktor")) {
+            mfaBlocked.current = true;
+            setMfaRequired(true);
+          }
           setTeam(null);
           setData(emptyData());
         }
@@ -225,6 +241,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setData(emptyData());
     setTeam(null);
     setAppAdmin(null);
+    mfaBlocked.current = false;
+    setMfaRequired(false);
     try {
       const selection = JSON.parse(
         sessionStorage.getItem("heimfriseur-admin-business") || "{}",
@@ -234,23 +252,43 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     } catch {
       sessionStorage.removeItem("heimfriseur-admin-business");
     }
-    if (
-      user &&
-      !demo &&
-      supabase &&
-      !sessionStorage.getItem("heimfriseur-invite")
-    ) {
+    if (user && !demo && supabase) {
       setLoading(true);
       void (async () => {
-        const admin = await supabase!.rpc("get_app_admin_context");
-        if (!admin.data?.is_admin) {
-          const initialized = await supabase!.rpc("initialize_account");
-          if (initialized.error) setError(friendly(initialized.error));
+        try {
+          const assurance =
+            await supabase!.auth.mfa.getAuthenticatorAssuranceLevel();
+          if (assurance.error) throw assurance.error;
+          if (
+            assurance.data.nextLevel === "aal2" &&
+            assurance.data.currentLevel !== "aal2"
+          ) {
+            mfaBlocked.current = true;
+            setMfaRequired(true);
+            setLoading(false);
+            return;
+          }
+          if (!sessionStorage.getItem("heimfriseur-invite")) {
+            const admin = await supabase!.rpc("get_app_admin_context");
+            if (admin.error) throw admin.error;
+            if (!admin.data?.is_admin) {
+              const init = await supabase!.rpc("initialize_account");
+              if (init.error) throw init.error;
+            }
+            await refresh();
+          } else setLoading(false);
+        } catch (error) {
+          if (
+            (error as { message?: string }).message?.includes("Zwei-Faktor")
+          ) {
+            mfaBlocked.current = true;
+            setMfaRequired(true);
+          }
+          setError(friendly(error));
+          setLoading(false);
         }
-        await refresh();
       })();
-    } else if (!sessionStorage.getItem("heimfriseur-invite")) void refresh();
-    else setLoading(false);
+    } else void refresh();
   }, [user?.id, demo]);
   useEffect(() => {
     if (!user || demo || !team) return;
@@ -341,6 +379,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
     sessionStorage.removeItem("heimfriseur-admin-business");
     setAppAdmin(null);
+    mfaBlocked.current = false;
+    setMfaRequired(false);
     setData(emptyData());
     setTeam(null);
     setUser(null);
@@ -348,6 +388,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   return (
     <Context.Provider
       value={{
+        mfaRequired,
+        unlockMfa: async () => {
+          mfaBlocked.current = false;
+          setMfaRequired(false);
+          await refresh();
+        },
         data,
         team,
         appAdmin,

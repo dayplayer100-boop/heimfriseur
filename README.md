@@ -1,3 +1,9 @@
+## Anmeldung und Sicherheit 6.1.0
+
+Google-PKCE-Anmeldung, Bestätigung erneut senden, verständliche SMTP-Meldungen, TOTP-MFA mit serverseitigem AAL2-Schutz, bestätigte E-Mail vor Datenzugriff, Schutz-Header und aktualisierte Abhängigkeiten. Vollständige Einrichtung, Befunde und verbleibende Aufgaben: [SICHERHEIT-UND-ANMELDUNG.md](SICHERHEIT-UND-ANMELDUNG.md).
+
+Nach 001–007 **008_auth_security.sql** einmal ausführen und veröffentlichen. SMTP und Google müssen zusätzlich in den Provider-Konsolen eingerichtet werden; der Frontend-Button allein aktiviert keinen Provider. Bestehende Rollen/Unternehmen bleiben unverändert. Node ≥22.12, Build `npm run build`, Ausgabe `dist`. Alle echten Kundendaten bleiben bei Supabase; statische Website auf Firebase Hosting.
+
 ## Datenschutzkorrektur 6.0.1
 
 Mitarbeiter sehen keine Umsatzübersicht und keine Beträge/Materialkosten abgeschlossener Behandlungen, auch nicht ihrer eigenen. Diese Daten werden im Mitarbeiterabruf serverseitig entfernt. Namen, Leistungen, Dauer und Zahlungsstatus bleiben für die Arbeit sichtbar. Preise und Materialeingabe einer laufenden eigenen Behandlung bleiben für die Leistungserfassung verfügbar; sie sind keine Umsatzstatistik.

@@ -1,6 +1,6 @@
 {
   "name": "heimfriseur",
-  "version": "6.0.1",
+  "version": "6.1.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -16,16 +16,17 @@
     "predev": "node scripts/prepare-ocr.mjs",
     "test:practical-browser": "node scripts/practical-browser-check.mjs",
     "test:clear-browser": "node scripts/clear-browser-check.mjs",
-    "test:workday-browser": "node scripts/workday-browser-check.mjs"
+    "test:workday-browser": "node scripts/workday-browser-check.mjs",
+    "test:auth-browser": "node scripts/auth-browser-check.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.57.0",
-    "jspdf": "^3.0.0",
+    "jspdf": "^4.2.1",
     "jspdf-autotable": "^5.0.0",
     "lucide-react": "^0.468.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
-    "tesseract.js": "^6.0.1"
+    "tesseract.js": "^6.1.0"
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.8",
@@ -38,9 +39,9 @@
     "prettier": "^3.9.9",
     "typescript": "~5.8.3",
     "vite": "^6.3.0",
-    "vitest": "^3.2.0"
+    "vitest": "^5.0.3"
   },
   "engines": {
-    "node": ">=22"
+    "node": ">=22.12"
   }
 }

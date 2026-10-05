@@ -112,7 +112,7 @@ beforeAll(async () => {
   await db.exec(readFileSync("supabase/migrations/002_team.sql", "utf8"));
 }, 30000);
 afterAll(() => db.close());
-describe.sequential(
+describe(
   "Teams: migration, RLS, invitations and shared workflow",
   () => {
     it("preserves legacy customers, snapshots and creates separate businesses", async () => {

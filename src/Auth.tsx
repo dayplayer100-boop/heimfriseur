@@ -1,3 +1,4 @@
+import { authRedirect, authError } from "./authSupport";
 import { PasswordInput } from "./PasswordInput";
 import { useEffect, useState } from "react";
 import { InstallAppButton } from "./InstallApp";
@@ -50,7 +51,33 @@ export function Auth() {
   const [mode, setMode] = useState("login"),
     [pending, setPending] = useState(false),
     [message, setMessage] = useState(""),
-    [setup, setSetup] = useState(false);
+    [setup, setSetup] = useState(false),
+    [resendAfter, setResendAfter] = useState(0),
+    [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+  useEffect(() => {
+    const url = new URL(location.href),
+      hash = new URLSearchParams(url.hash.slice(1));
+    const error = url.searchParams.get("error") || hash.get("error");
+    if (error) {
+      setError(
+        authError({
+          code: url.searchParams.get("error_code") || error,
+          message: url.searchParams.get("error_description") || "",
+        }),
+      );
+      for (const key of ["error", "error_code", "error_description"]) {
+        url.searchParams.delete(key);
+        hash.delete(key);
+      }
+      if (new URLSearchParams(location.hash.slice(1)).has("error"))
+        url.hash = hash.toString();
+      history.replaceState({}, "", url.pathname + url.search + url.hash);
+    }
+  }, []);
   useEffect(() => {
     if (supabase) {
       const { data } = supabase.auth.onAuthStateChange((event) => {
@@ -61,40 +88,49 @@ export function Auth() {
   }, []);
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    if (!supabase) return;
+    if (!supabase || pending) return;
     const d = formObject(e);
     setPending(true);
     setError("");
     setMessage("");
     try {
+      if (mode === "confirm" && Date.now() < resendAfter) return;
       const result =
-        mode === "register"
-          ? await supabase.auth.signUp({
+        mode === "confirm"
+          ? await supabase.auth.resend({
+              type: "signup",
               email: d.email,
-              password: d.password,
-              options: {
-                emailRedirectTo:
-                  location.origin +
-                  (invitation
-                    ? "/?invite=" + encodeURIComponent(invitation)
-                    : ""),
-              },
+              options: { emailRedirectTo: authRedirect(invitation) },
             })
-          : mode === "reset"
-            ? await supabase.auth.resetPasswordForEmail(d.email, {
-                redirectTo: location.origin + "/?reset=1",
+          : mode === "register"
+            ? await supabase.auth.signUp({
+                email: d.email,
+                password: d.password,
+                options: {
+                  emailRedirectTo: authRedirect(invitation),
+                },
               })
-            : mode === "update"
-              ? await supabase.auth.updateUser({ password: d.password })
-              : await supabase.auth.signInWithPassword({
-                  email: d.email,
-                  password: d.password,
-                });
+            : mode === "reset"
+              ? await supabase.auth.resetPasswordForEmail(d.email, {
+                  redirectTo: location.origin + "/?reset=1",
+                })
+              : mode === "update"
+                ? await supabase.auth.updateUser({ password: d.password })
+                : await supabase.auth.signInWithPassword({
+                    email: d.email,
+                    password: d.password,
+                  });
       if (result.error) throw result.error;
       if (mode === "register")
         setMessage(
-          "Registrierung gespeichert. Prüfe dein E-Mail-Postfach zur Bestätigung.",
+          "Falls die Adresse registriert werden kann, erhältst du eine Bestätigung. Prüfe auch Spam. Kommt keine Mail, nutze „Bestätigung erneut senden“ oder kontaktiere den Betreiber.",
         );
+      if (mode === "confirm") {
+        setResendAfter(Date.now() + 60000);
+        setMessage(
+          "Falls eine Bestätigung aussteht, wurde der Versand angefordert. Bitte Postfach und Spam prüfen.",
+        );
+      }
       if (mode === "reset")
         setMessage(
           "Falls ein Konto existiert, erhältst du eine E-Mail zum Zurücksetzen.",
@@ -104,16 +140,7 @@ export function Auth() {
         setMode("login");
       }
     } catch (err) {
-      const msg = (err as Error).message;
-      setError(
-        msg.includes("Invalid login")
-          ? "E-Mail oder Passwort ist nicht korrekt."
-          : msg.includes("already registered")
-            ? "Diese E-Mail ist bereits registriert."
-            : msg.includes("rate limit")
-              ? "Zu viele Versuche. Bitte etwas später erneut versuchen."
-              : "Anmeldung fehlgeschlagen. Bitte Verbindung und Eingaben prüfen.",
-      );
+      setError(authError(err));
     } finally {
       setPending(false);
     }
@@ -157,11 +184,13 @@ export function Auth() {
             ? "Supabase verbinden"
             : mode === "register"
               ? "Konto erstellen"
-              : mode === "reset"
-                ? "Passwort vergessen?"
-                : mode === "update"
-                  ? "Neues Passwort"
-                  : "Schön, dass du da bist."}
+              : mode === "confirm"
+                ? "E-Mail bestätigen"
+                : mode === "reset"
+                  ? "Passwort vergessen?"
+                  : mode === "update"
+                    ? "Neues Passwort"
+                    : "Schön, dass du da bist."}
         </h2>
         {!setup && mode === "login" && (
           <div className="auth-install">
@@ -175,29 +204,75 @@ export function Auth() {
             {mode !== "update" && (
               <Input label="E-Mail" name="email" type="email" required />
             )}
-            {mode !== "reset" && (
+            {!["reset", "confirm"].includes(mode) && (
               <PasswordInput
                 newPassword={mode === "register" || mode === "update"}
               />
             )}
             {mode === "register" && (
               <p className="muted">
-                Mindestens 6 Zeichen. Für ein sicheres Passwort nutze eine
+                Mindestens 12 Zeichen. Für ein sicheres Passwort nutze eine
                 längere Kombination.
               </p>
             )}
-            <Button type="submit" disabled={pending}>
+            <Button
+              type="submit"
+              disabled={pending || (mode === "confirm" && now < resendAfter)}
+            >
               {pending
                 ? "Bitte warten …"
                 : mode === "register"
                   ? "Registrieren"
-                  : mode === "reset"
-                    ? "Link senden"
-                    : mode === "update"
-                      ? "Passwort speichern"
-                      : "Anmelden"}
+                  : mode === "confirm"
+                    ? now < resendAfter
+                      ? "Bitte kurz warten …"
+                      : "Bestätigung erneut senden"
+                    : mode === "reset"
+                      ? "Link senden"
+                      : mode === "update"
+                        ? "Passwort speichern"
+                        : "Anmelden"}
             </Button>
             {message && <p className="success">{message}</p>}
+            {["login", "register"].includes(mode) && (
+              <Button
+                variant="secondary"
+                disabled={pending}
+                onClick={async () => {
+                  setPending(true);
+                  setError("");
+                  try {
+                    const result = await supabase!.auth.signInWithOAuth({
+                      provider: "google",
+                      options: {
+                        redirectTo: authRedirect(invitation),
+                        scopes: "openid email profile",
+                        queryParams: { prompt: "select_account" },
+                      },
+                    });
+                    if (result.error) throw result.error;
+                  } catch (error) {
+                    setError(authError(error));
+                  } finally {
+                    setPending(false);
+                  }
+                }}
+              >
+                Mit Google anmelden
+              </Button>
+            )}
+            {mode !== "confirm" && (
+              <button
+                type="button"
+                className="text-button"
+                onClick={() => {
+                  setMode("confirm");
+                  setMessage("");
+                }}
+              >
+                Bestätigung erneut senden
+              </button>
+            )}
             <div className="auth-links">
               <button
                 type="button"
@@ -242,7 +317,7 @@ export function Auth() {
           </button>
         )}
       </section>
-      <footer>HeimFriseur · Version 1</footer>
+      <footer>HeimFriseur</footer>
     </div>
   );
 }

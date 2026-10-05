@@ -1,3 +1,5 @@
+import { canConfigureConnection } from "./supabase";
+import { AccountSecurity } from "./AccountSecurity";
 import { appVersion, checkAppUpdate } from "./AppUpdate";
 import { PriceLists } from "./PriceLists";
 import { AppAdminPanel } from "./AppAdmin";
@@ -142,6 +144,7 @@ export function Settings({
         <div className="detail-columns">
           <section className="panel">
             <h2>App-Einstellungen</h2>
+            <AccountSecurity />
             <Button variant="secondary" onClick={openIntroduction}>
               Einführung erneut ansehen
             </Button>
@@ -245,7 +248,7 @@ export function Settings({
               </>
             )}
           </section>
-          {isOwner && (
+          {isOwner && canConfigureConnection && (
             <section className="panel">
               <h2>Supabase-Verbindung</h2>
               <ConnectionForm />

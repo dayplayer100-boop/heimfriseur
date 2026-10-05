@@ -24,7 +24,7 @@ export function PasswordInput({
           type={visible ? "text" : "password"}
           autoComplete={newPassword ? "new-password" : "current-password"}
           required
-          minLength={6}
+          minLength={newPassword ? 12 : 6}
           onChange={(e) => {
             clearTimeout(timer.current);
             const value = e.target.value;

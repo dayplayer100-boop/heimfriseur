@@ -34,6 +34,12 @@ await db.exec(
     "utf8",
   ),
 );
+await db.exec(
+  "create table auth.mfa_factors(id uuid primary key,user_id uuid references auth.users(id),status text)",
+);
+await db.exec(
+  readFileSync("supabase/migrations/008_auth_security.sql", "utf8"),
+);
 await q("select bootstrap_app_admin('admin@test.invalid')");
 await q("update app_admins set onboarding_completed=true where user_id=$1", [
   A,

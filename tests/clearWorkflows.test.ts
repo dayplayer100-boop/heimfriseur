@@ -48,6 +48,9 @@ beforeAll(async () => {
   await db.exec(
     `create role anon;create role authenticated;create schema auth;create table auth.users(id uuid primary key,email text,email_confirmed_at timestamptz);create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;grant usage on schema public,auth to authenticated;grant execute on function auth.uid() to authenticated;insert into auth.users values('${O}','owner@test.invalid',now()),('${A}','admin@test.invalid',now()),('${E}','employee@test.invalid',now()),('${X}','other@test.invalid',now());`,
   );
+  await db.exec(
+    "create table auth.mfa_factors(id uuid primary key,user_id uuid references auth.users(id),status text)",
+  );
   for (const file of [
     "001_heimfriseur.sql",
     "002_team.sql",
@@ -56,6 +59,7 @@ beforeAll(async () => {
     "005_clear_workflows.sql",
     "006_workday.sql",
     "007_employee_financial_privacy.sql",
+    "008_auth_security.sql",
   ])
     await db.exec(
       readFileSync("supabase/migrations/" + file, "utf8").replace(
@@ -116,7 +120,7 @@ beforeAll(async () => {
   await rpc("bootstrap_app_admin", { p_email: "admin@test.invalid" });
 }, 30000);
 afterAll(() => db.close());
-describe.sequential("V5: Bedienung und sichere Arbeitsabläufe", () => {
+describe("V5: Bedienung und sichere Arbeitsabläufe", () => {
   it("ordnet den Admin automatisch dem echten Betrieb zu, ohne die Geschäftsführung zu ändern", async () => {
     await as(A, ghost);
     const ctx = await rpc("get_app_admin_context");
@@ -321,7 +325,7 @@ describe.sequential("V5: Bedienung und sichere Arbeitsabläufe", () => {
     ).rejects.toThrow("zugewiesene Gruppe");
   });
 });
-describe.sequential("V6: einmalige Änderungen und Zahlungen", () => {
+describe("V6: einmalige Änderungen und Zahlungen", () => {
   it("bewahrt den Rhythmus nach einer vorgezogenen Behandlung und verhindert doppelte Nachholtermine", async () => {
     await as(O);
     const customer = await rpc("save_customer", {
@@ -504,7 +508,7 @@ describe.sequential("V6: einmalige Änderungen und Zahlungen", () => {
     ).rejects.toThrow("darfst du nicht");
   });
 });
-describe.sequential("V6.0.1: vertrauliche Geschäftszahlen", () => {
+describe("V6.0.1: vertrauliche Geschäftszahlen", () => {
   it("entfernt auch eigene abgeschlossene Beträge aus dem Mitarbeiterabruf", async () => {
     await as(O);
     const a = await rpc("plan_customer_visit", {
@@ -638,6 +642,112 @@ describe.sequential("V6.0.1: vertrauliche Geschäftszahlen", () => {
     expect((await rpc("get_app_admin_context")).is_admin).toBe(false);
     await as(O);
     expect((await rpc("get_team_context")).membership.role).toBe("owner");
+  });
+});
+describe("V6.1: serverseitige Sitzungssicherheit", () => {
+  it("sperrt unbestätigte Konten auch bei direkten RLS- und RPC-Anfragen", async () => {
+    await db.exec("reset role");
+    await q("update auth.users set email_confirmed_at=null where id=$1", [O]);
+    await as(O);
+    expect(await q("select * from facilities")).toEqual([]);
+    await expect(rpc("get_team_context")).rejects.toThrow(
+      "E-Mail-Adresse bestätigen",
+    );
+    await expect(rpc("initialize_account")).rejects.toThrow(
+      "E-Mail-Adresse bestätigen",
+    );
+    await db.exec("reset role");
+    await q("update auth.users set email_confirmed_at=now() where id=$1", [O]);
+  });
+  it("erzwingt bei aktiviertem MFA AAL2 und ignoriert manipulierte Admin-Auswahl", async () => {
+    await db.exec("reset role");
+    await q(
+      "insert into auth.mfa_factors values(gen_random_uuid(),$1,'verified')",
+      [O],
+    );
+    await as(O);
+    expect(await q("select * from facilities")).toEqual([]);
+    await expect(rpc("get_team_context")).rejects.toThrow("Zwei-Faktor");
+    await q("select set_config('request.jwt.claims',$1,false)", [
+      JSON.stringify({ sub: O, aal: "aal2" }),
+    ]);
+    expect((await rpc("get_team_context")).membership.role).toBe("owner");
+    expect((await q("select id from facilities")).length).toBeGreaterThan(0);
+    await as(E, business);
+    expect((await rpc("get_app_admin_context")).is_admin).toBe(false);
+    await db.exec("reset role");
+    await q("delete from auth.mfa_factors where user_id=$1", [O]);
+  });
+  it("MFA eines Geschäftsführers blockiert keine zugewiesene Mitarbeiterbehandlung", async () => {
+    await as(O);
+    const a = await rpc("plan_customer_visit", {
+      p_facility: f,
+      p_group: g,
+      p_customer: c,
+      p_date: "2029-02-06",
+      p_time: "09:00",
+    });
+    await rpc("assign_visit", {
+      p_appointment: a,
+      p_users: [E],
+      p_responsible: E,
+    });
+    const member = (
+      await q("select id from appointment_customers where appointment_id=$1", [
+        a,
+      ])
+    )[0].id;
+    await db.exec("reset role");
+    await q(
+      "insert into auth.mfa_factors values(gen_random_uuid(),$1,'verified')",
+      [O],
+    );
+    await as(E);
+    const t = await rpc("start_treatment", { p_member: member });
+    await rpc("save_treatment", {
+      p_treatment: t,
+      p_services: [s],
+      p_price: null,
+      p_material: 0,
+      p_notes: "",
+      p_finish: true,
+    });
+    await db.exec("reset role");
+    await q("delete from auth.mfa_factors where user_id=$1", [O]);
+  });
+  it("interne Funktionen und das SQL-Admin-Bootstrap bleiben aus dem Browser unzugänglich", async () => {
+    await as(E);
+    await expect(
+      q("select heimfriseur_private.session_actor()"),
+    ).rejects.toThrow();
+    await expect(
+      q("select heimfriseur_private.session_allowed()"),
+    ).rejects.toThrow();
+    await expect(
+      rpc("bootstrap_app_admin", { p_email: "employee@test.invalid" }),
+    ).rejects.toThrow();
+    await db.exec("reset role");
+    await db.exec("set role anon");
+    await expect(rpc("employee_snapshot")).rejects.toThrow();
+    await db.exec("reset role");
+    expect(
+      await q(
+        "select relname from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relkind='r' and not c.relrowsecurity",
+      ),
+    ).toEqual([]);
+    expect(
+      await q(
+        "select p.proname from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.prosecdef and has_function_privilege('anon',p.oid,'EXECUTE')",
+      ),
+    ).toEqual([]);
+    expect(
+      await q(
+        "select p.proname from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname in ('public','heimfriseur_private') and p.prosecdef and p.proconfig::text not like '%pg_catalog%public%pg_temp%'",
+      ),
+    ).toEqual([]);
+    await db.exec("set role anon");
+    await expect(q("select * from customers")).rejects.toThrow();
+    await db.exec("reset role");
   });
 });
 describe("Deutsche Datum- und Zeiteingabe", () => {

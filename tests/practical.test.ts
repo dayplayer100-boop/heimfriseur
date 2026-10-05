@@ -71,7 +71,7 @@ beforeAll(async () => {
   )[0].id;
 }, 30000);
 afterAll(() => db.close());
-describe.sequential("Practical workflow migration and authorization", () => {
+describe("Practical workflow migration and authorization", () => {
   it("creates customers with unknown names and missing facility/group without blocking", async () => {
     const id = await rpc("save_customer", {
       p_data: { first_name: "", last_name: "" },

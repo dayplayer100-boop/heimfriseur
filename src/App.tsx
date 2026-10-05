@@ -1,3 +1,4 @@
+import { AccountSecurity } from "./AccountSecurity";
 import { SaveStatus } from "./SaveStatus";
 import { SetupGuide } from "./SetupGuide";
 import { PasswordInput } from "./PasswordInput";
@@ -147,6 +148,7 @@ export function App() {
         <p>Deine Daten werden geladen …</p>
       </div>
     );
+  else if (store.mfaRequired) content = <AccountSecurity required />;
   else if (recovery)
     content = (
       <section className="panel recovery">
@@ -288,7 +290,7 @@ export function App() {
     }
   return (
     <>
-      {(user || demo) && !recovery ? (
+      {(user || demo) && !recovery && !store.mfaRequired ? (
         <div className="app-shell">
           <aside className="sidebar">
             <a className="brand" href="#dashboard">

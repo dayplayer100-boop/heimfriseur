@@ -32,7 +32,7 @@ beforeAll(async () => {
   await owner();
 }, 30000);
 afterAll(() => db.close());
-describe.sequential(
+describe(
   "Supabase migration and real PostgreSQL workflow (local PGlite)",
   () => {
     it("creates all 11 tables and enables RLS", async () => {

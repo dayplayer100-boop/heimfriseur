@@ -109,7 +109,7 @@ beforeAll(async () => {
   ]);
 }, 30000);
 afterAll(() => db.close());
-describe.sequential("App administrator and tenant boundaries", () => {
+describe("App administrator and tenant boundaries", () => {
   it("prevents owners and employees from granting or bootstrapping app privileges", async () => {
     for (const user of [O, E]) {
       await as(user, b);
