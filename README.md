@@ -1,3 +1,11 @@
+## Datenschutzkorrektur 6.0.1
+
+Mitarbeiter sehen keine Umsatzübersicht und keine Beträge/Materialkosten abgeschlossener Behandlungen, auch nicht ihrer eigenen. Diese Daten werden im Mitarbeiterabruf serverseitig entfernt. Namen, Leistungen, Dauer und Zahlungsstatus bleiben für die Arbeit sichtbar. Preise und Materialeingabe einer laufenden eigenen Behandlung bleiben für die Leistungserfassung verfügbar; sie sind keine Umsatzstatistik.
+
+Nach bereits installierten 001–006 zuerst `supabase/migrations/007_employee_financial_privacy.sql` im Supabase SQL Editor ausführen. Zur gezielten Zuordnung des gemeldeten Mitarbeiterkontos anschließend `supabase/employee-access.sql` ausführen. Darin `MITARBEITER_EMAIL` und `GESCHAEFTSFUEHRER_EMAIL` vor dem Ausführen durch die tatsächlichen registrierten Adressen ersetzen. Dieses Betreiberskript setzt das angegebene Konto auf Mitarbeiter beim angegebenen Geschäftsführer, entfernt einen etwaigen App-Admin-Zugang und verweigert einen Unternehmenswechsel, wenn dabei bestehende Geschäftsdaten betroffen wären. Es löscht keine Geschäftsdaten. Konto anschließend abmelden und erneut anmelden; Besuche müssen unter Team weiterhin zugewiesen werden.
+
+Danach Cloud Shell: `git pull origin main`, `npm ci`, `npm run build`, `npx --yes --package firebase-tools firebase deploy --only hosting --config firebase.clean.json --project heimfriseur-dayplayer100`. Version 6.0.1 auf Website und PWA laden. SQL-Dateien gehören in Supabase, Shellbefehle ausschließlich in Cloud Shell.
+
 # HeimFriseur – Version 6.0
 
 Mein Arbeitstag, Kundenwochenplanung, einmalige Terminänderungen mit erhaltenem Rhythmus, Abwesenheitsauswahl, Zahlungsübersicht, Rechtevorlagen, Speicheranzeige und gemeinsame Versionsprüfung für Website/PWA. Update-Anleitung: [ARBEITSTAG-UPDATE.md](ARBEITSTAG-UPDATE.md).

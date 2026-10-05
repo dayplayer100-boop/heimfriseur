@@ -85,7 +85,7 @@ export function PaymentDialog({
   treatmentId: string;
   onClose: () => void;
 }) {
-  const { data, rpc, run, can } = useStore();
+  const { data, rpc, run, can, isOwner } = useStore();
   const t = data.treatments.find((t) => t.id === treatmentId);
   const c = data.customers.find((c) => c.id === t?.customer_id);
   const billing = data.customer_billing.find((b) => b.customer_id === c?.id),
@@ -104,7 +104,8 @@ export function PaymentDialog({
     <Modal title="Zahlung / Abrechnung erfassen" onClose={onClose}>
       <p>
         <strong>
-          {c ? fullName(c) : "Kunde"} · {euro(t.total_price)}
+          {c ? fullName(c) : "Kunde"}
+          {isOwner && <> · {euro(t.total_price)}</>}
         </strong>
         <br />
         Die Behandlung ist bereits gespeichert. Unbekannte Zahlungsangaben

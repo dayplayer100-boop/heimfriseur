@@ -28,6 +28,12 @@ await db.exec(
   readFileSync("supabase/migrations/005_clear_workflows.sql", "utf8"),
 );
 await db.exec(readFileSync("supabase/migrations/006_workday.sql", "utf8"));
+await db.exec(
+  readFileSync(
+    "supabase/migrations/007_employee_financial_privacy.sql",
+    "utf8",
+  ),
+);
 await q("select bootstrap_app_admin('admin@test.invalid')");
 await q("update app_admins set onboarding_completed=true where user_id=$1", [
   A,
@@ -314,6 +320,30 @@ try {
   await employee
     .getByRole("button", { name: "Später erfassen", exact: true })
     .click();
+  assert.equal(
+    await employee
+      .locator(".visit-customer.is-done .visit-customer-meta strong")
+      .count(),
+    0,
+    "Completed client amounts are private",
+  );
+  assert.equal(
+    await employee
+      .getByText(/Aktueller Umsatz|Geplanter Umsatz|Umsatz nach Material/)
+      .count(),
+    0,
+  );
+  await employee.locator(".visit-customer.is-done .name-link").first().click();
+  await employee.getByRole("button", { name: "Historie", exact: true }).click();
+  assert.doesNotMatch(
+    await employee.locator(".history-list").innerText(),
+    /€|Material:/,
+    "Historical finances must not appear for employees",
+  );
+  await employee.goto(
+    (process.env.APP_URL || "http://localhost:5173") + "/#visit/" + visit,
+  );
+  await employee.getByRole("heading", { name: "Kundenliste" }).waitFor();
   const second = await pageFor(F, "second@test.invalid");
   await second
     .getByRole("button", { name: "Besuch öffnen", exact: true })

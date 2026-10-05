@@ -55,6 +55,7 @@ beforeAll(async () => {
     "004_app_admin.sql",
     "005_clear_workflows.sql",
     "006_workday.sql",
+    "007_employee_financial_privacy.sql",
   ])
     await db.exec(
       readFileSync("supabase/migrations/" + file, "utf8").replace(
@@ -501,6 +502,142 @@ describe.sequential("V6: einmalige Änderungen und Zahlungen", () => {
         p_date: "2028-01-25",
       }),
     ).rejects.toThrow("darfst du nicht");
+  });
+});
+describe.sequential("V6.0.1: vertrauliche Geschäftszahlen", () => {
+  it("entfernt auch eigene abgeschlossene Beträge aus dem Mitarbeiterabruf", async () => {
+    await as(O);
+    const a = await rpc("plan_customer_visit", {
+      p_facility: f,
+      p_group: g,
+      p_customer: c,
+      p_date: "2029-01-02",
+      p_time: "09:00",
+    });
+    await rpc("assign_visit", {
+      p_appointment: a,
+      p_users: [E],
+      p_responsible: E,
+    });
+    const m = (
+      await q("select id from appointment_customers where appointment_id=$1", [
+        a,
+      ])
+    )[0].id;
+    await rpc("set_member_permissions", {
+      p_member: (await rpc("get_team_context")).members.find(
+        (x: any) => x.user_id === E,
+      ).id,
+      p_permissions: { record_payments: true },
+    });
+    await as(E);
+    const t = await rpc("start_treatment", { p_member: m });
+    expect(
+      Number(
+        (await rpc("employee_snapshot")).treatments.find((x: any) => x.id === t)
+          .total_price,
+      ),
+    ).toBeGreaterThan(0);
+    await rpc("save_treatment", {
+      p_treatment: t,
+      p_services: [s],
+      p_price: null,
+      p_material: 4.2,
+      p_notes: "",
+      p_finish: true,
+    });
+    await rpc("record_payment", {
+      p_treatment: t,
+      p_data: { status: "Offen", delivery: "Keine Angabe" },
+    });
+    const snapshot = await rpc("employee_snapshot");
+    const own = snapshot.treatments.find((x: any) => x.id === t);
+    expect(own.total_price).toBeNull();
+    expect(own.material_cost).toBeNull();
+    expect(
+      snapshot.treatment_services.find((x: any) => x.treatment_id === t)
+        .price_snapshot,
+    ).toBeNull();
+    expect(
+      snapshot.treatment_payments.find((x: any) => x.treatment_id === t).amount,
+    ).toBeNull();
+    expect(await q("select * from treatments where id=$1", [t])).toEqual([]);
+    await expect(
+      q("select heimfriseur_private.employee_workday_snapshot()"),
+    ).rejects.toThrow();
+    await as(O);
+    expect(
+      Number(
+        (await q("select total_price from treatments where id=$1", [t]))[0]
+          .total_price,
+      ),
+    ).toBeGreaterThan(0);
+    await as(A, business);
+    expect(
+      Number(
+        (await q("select material_cost from treatments where id=$1", [t]))[0]
+          .material_cost,
+      ),
+    ).toBe(4.2);
+  });
+  it("übernimmt ein leeres versehentliches Eigentümerkonto, ohne Geschäftsdaten zu löschen", async () => {
+    const Y = "50000000-0000-0000-0000-000000000005";
+    await db.exec("reset role");
+    await q("insert into auth.users values($1,'empty@test.invalid',now())", [
+      Y,
+    ]);
+    await as(Y);
+    await rpc("initialize_account");
+    const oldBusiness = (await rpc("get_team_context")).business.id;
+    await db.exec("reset role");
+    await db.exec(
+      readFileSync("supabase/employee-access.sql", "utf8")
+        .replaceAll("MITARBEITER_EMAIL", "empty@test.invalid")
+        .replaceAll("GESCHAEFTSFUEHRER_EMAIL", "owner@test.invalid"),
+    );
+    await as(Y);
+    const ctx = await rpc("get_team_context");
+    expect(ctx.membership.role).toBe("employee");
+    expect(ctx.business.id).toBe(business);
+    await expect(
+      q("select * from businesses where id=$1", [oldBusiness]),
+    ).rejects.toThrow("permission denied");
+    await db.exec("reset role");
+    expect(
+      (await q("select id from businesses where id=$1", [oldBusiness])).length,
+    ).toBe(1);
+  });
+  it("bricht eine Zuordnungsänderung mit bestehenden Geschäftsdaten ohne Datenverlust ab", async () => {
+    await as(X);
+    await rpc("initialize_account");
+    await q(
+      "insert into facilities(user_id,name) values($1,'Bestehendes Heim')",
+      [X],
+    );
+    const sql = readFileSync("supabase/employee-access.sql", "utf8")
+      .replaceAll("MITARBEITER_EMAIL", "other@test.invalid")
+      .replaceAll("GESCHAEFTSFUEHRER_EMAIL", "owner@test.invalid");
+    await db.exec("reset role");
+    await expect(db.exec(sql)).rejects.toThrow("nichts geändert");
+    await db.exec("rollback");
+    await as(X);
+    expect((await rpc("get_team_context")).membership.role).toBe("owner");
+    expect(
+      (await q("select name from facilities where user_id=$1", [X]))[0].name,
+    ).toBe("Bestehendes Heim");
+  });
+  it("korrigiert die Rolle idempotent und lässt Geschäftsführerrechte bestehen", async () => {
+    await db.exec("reset role");
+    const sql = readFileSync("supabase/employee-access.sql", "utf8")
+      .replaceAll("MITARBEITER_EMAIL", "employee@test.invalid")
+      .replaceAll("GESCHAEFTSFUEHRER_EMAIL", "owner@test.invalid");
+    await db.exec(sql);
+    await db.exec(sql);
+    await as(E);
+    expect((await rpc("get_team_context")).membership.role).toBe("employee");
+    expect((await rpc("get_app_admin_context")).is_admin).toBe(false);
+    await as(O);
+    expect((await rpc("get_team_context")).membership.role).toBe("owner");
   });
 });
 describe("Deutsche Datum- und Zeiteingabe", () => {

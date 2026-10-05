@@ -157,7 +157,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       if (ctx.error) throw ctx.error;
       const nextTeam = ctx.data as TeamContext;
       if (version === generation.current) {
-        if (team?.business.id !== nextTeam.business.id) setData(emptyData());
+        if (
+          team?.business.id !== nextTeam.business.id ||
+          team?.membership.role !== nextTeam.membership.role
+        )
+          setData(emptyData());
         setTeam(nextTeam);
       }
       if (nextTeam.membership.role === "employee") {

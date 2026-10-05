@@ -9,7 +9,7 @@ const browser = await chromium.launch({
 });
 const base = process.env.APP_URL || "http://localhost:4173",
   meta = await (await fetch(base + "/version.json")).json();
-assert.equal(meta.version, "6.0.0");
+assert.equal(meta.version, "6.0.1");
 assert.ok(meta.buildId.startsWith(meta.version + "-"));
 const page = await browser.newPage({ viewport: { width: 390, height: 844 } }),
   errors = [];
@@ -30,7 +30,7 @@ try {
     .getByRole("button", { name: "Auf Updates prüfen", exact: true })
     .click();
   await page
-    .getByText("Website und App sind auf der aktuellen Version 6.0.0", {
+    .getByText("Website und App sind auf der aktuellen Version 6.0.1", {
       exact: true,
     })
     .waitFor();

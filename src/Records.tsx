@@ -660,7 +660,7 @@ export function CustomerDetail({
   edit: Edit;
   confirmDelete: (table: Table, row: Row) => void;
 }) {
-  const { data, save, run, setNotify } = useStore();
+  const { data, save, run, setNotify, isOwner } = useStore();
   const [tab, setTab] = useState("Übersicht"),
     [formula, setFormula] = useState<Record<string, any> | null>(null);
   const c = data.customers.find((c) => c.id === id);
@@ -800,7 +800,7 @@ export function CustomerDetail({
             <section className="panel" key={t.id}>
               <div className="section-heading">
                 <h3>{dateLabel(t.start_time)}</h3>
-                <strong>{euro(t.total_price)}</strong>
+                {isOwner && <strong>{euro(t.total_price)}</strong>}
               </div>
               <p>
                 {data.treatment_services
@@ -810,7 +810,7 @@ export function CustomerDetail({
               </p>
               <div className="visit-meta">
                 <Meta type="clock">{minutes(Number(t.duration_minutes))}</Meta>
-                <span>Material: {euro(t.material_cost)}</span>
+                {isOwner && <span>Material: {euro(t.material_cost)}</span>}
                 <Meta type="building">
                   {
                     data.facilities.find(

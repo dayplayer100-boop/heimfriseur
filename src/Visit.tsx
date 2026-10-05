@@ -231,7 +231,8 @@ export function Visit({
                   </span>
                   {(isOwner ||
                     !t ||
-                    (t.performed_by || t.user_id) === actorId) && (
+                    (!t.end_time &&
+                      (t.performed_by || t.user_id) === actorId)) && (
                     <strong>
                       {euro(
                         t?.total_price ??
@@ -904,7 +905,7 @@ export function TreatmentView({
       await refresh();
       if (finish) {
         setNotify(
-          `${fullName(c)} abgeschlossen · ${euro(price === "" ? total : Number(price.replace(",", ".")))} · ${minutes(elapsed / 60)}`,
+          `${fullName(c)} abgeschlossen${isOwner ? " · " + euro(price === "" ? total : Number(price.replace(",", "."))) : ""} · ${minutes(elapsed / 60)}`,
         );
         if (can("record_payments"))
           sessionStorage.setItem("heimfriseur-payment-prompt", id);
