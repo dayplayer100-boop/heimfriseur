@@ -1,5 +1,5 @@
 import { ScheduleFields, normalizeDate, normalizeTime } from "./ScheduleFields";
-import { fullName } from "./domain";
+import { fullName, dateLabel } from "./domain";
 import { useState, type FormEvent } from "react";
 import { useStore } from "./store";
 import { Button, Field, Input, formObject } from "./ui";
@@ -439,7 +439,7 @@ export function VisitForm({
     [group, setGroup] = useState(initial?.id || ""),
     [cohort, setCohort] = useState(""),
     [customer, setCustomer] = useState(""),
-    [date, setDate] = useState(today()),
+    [date, setDate] = useState(dateLabel(today())),
     [createGroup, setCreateGroup] = useState(false);
   const permittedGroups = data.groups.filter(
     (g) =>
