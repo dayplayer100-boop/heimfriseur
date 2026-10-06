@@ -1,3 +1,5 @@
+import { firebaseEnabled } from "./firebaseClient";
+import { firebaseRpc, firebaseSnapshot } from "./firebaseRepository";
 import {
   createContext,
   useContext,
@@ -18,6 +20,10 @@ import {
   type AppAdminContext,
 } from "./types";
 export function friendly(e: unknown) {
+  if ((e as { code?: string }).code === "permission-denied")
+    return "Kein Zugriff. Bitte neu laden oder den Geschäftsführer fragen.";
+  if ((e as { code?: string }).code === "resource-exhausted")
+    return "Das kostenlose Firebase-Kontingent ist erreicht. Bitte später erneut versuchen.";
   const x = e as { message?: string; code?: string };
   if (x.code === "23503")
     return "Dieser Datensatz kann nicht gelöscht oder zugeordnet werden, weil bereits abhängige Daten vorhanden sind.";
@@ -45,6 +51,14 @@ export function friendly(e: unknown) {
     x.message ||
     "Die Aktion konnte nicht gespeichert werden. Bitte erneut versuchen."
   );
+}
+async function backendRpc(name: string, params: Record<string, unknown> = {}) {
+  if (!firebaseEnabled) return supabase!.rpc(name, params);
+  try {
+    return { data: await firebaseRpc(name, params), error: null };
+  } catch (error) {
+    return { data: null, error: error as any };
+  }
 }
 interface Store {
   mfaRequired: boolean;
@@ -136,7 +150,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       return;
     }
     try {
-      const adminResponse = await supabase.rpc("get_app_admin_context");
+      const adminResponse = await backendRpc("get_app_admin_context");
       if (
         adminResponse.error &&
         !["PGRST202", "42883"].includes(adminResponse.error.code)
@@ -165,7 +179,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         }
         return;
       }
-      const ctx = await supabase.rpc("get_team_context");
+      if (firebaseEnabled) {
+        const snapshot = await firebaseSnapshot();
+        if (version === generation.current) {
+          setTeam(snapshot.team);
+          setData(snapshot.data);
+        }
+        return;
+      }
+      const ctx = await backendRpc("get_team_context");
       if (ctx.error) throw ctx.error;
       const nextTeam = ctx.data as TeamContext;
       if (version === generation.current) {
@@ -177,7 +199,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         setTeam(nextTeam);
       }
       if (nextTeam.membership.role === "employee") {
-        const snapshot = await supabase.rpc("employee_snapshot");
+        const snapshot = await backendRpc("employee_snapshot");
         if (snapshot.error) throw snapshot.error;
         if (version === generation.current) setData(snapshot.data as Data);
         return;
@@ -269,10 +291,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             return;
           }
           if (!sessionStorage.getItem("heimfriseur-invite")) {
-            const admin = await supabase!.rpc("get_app_admin_context");
+            const admin = await backendRpc("get_app_admin_context");
             if (admin.error) throw admin.error;
             if (!admin.data?.is_admin) {
-              const init = await supabase!.rpc("initialize_account");
+              const init = await backendRpc("initialize_account");
               if (init.error) throw init.error;
             }
             await refresh();
@@ -292,10 +314,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [user?.id, demo]);
   useEffect(() => {
     if (!user || demo || !team) return;
-    const timer = setInterval(() => {
-      if (document.visibilityState === "visible" && !lock.current)
-        void refresh();
-    }, 15000);
+    const timer = setInterval(
+      () => {
+        if (document.visibilityState === "visible" && !lock.current)
+          void refresh();
+      },
+      firebaseEnabled ? 120000 : 15000,
+    );
     const visible = () => {
       if (document.visibilityState === "visible" && !lock.current)
         void refresh();
@@ -316,6 +341,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     if (!supabase || !user) throw Error("Bitte anmelden.");
     if (team?.membership.role !== "owner")
       throw Error("Nur der Geschäftsführer darf Stammdaten ändern.");
+    if (firebaseEnabled) return firebaseRpc("save", { table, row });
     const ownerId = team.business.owner_user_id;
     const request = row.id
       ? supabase
@@ -335,6 +361,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       repository.current!.remove(table, id);
       return;
     }
+    if (firebaseEnabled) {
+      await firebaseRpc("remove", { table, id });
+      return;
+    }
     const r = await supabase!
       .from(table)
       .delete()
@@ -344,7 +374,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }
   async function rpc(name: string, p: Record<string, unknown>) {
     if (demo) return repository.current!.rpc(name, p);
-    const r = await supabase!.rpc(name, p);
+    const r = await backendRpc(name, p);
     if (r.error) throw r.error;
     return r.data;
   }

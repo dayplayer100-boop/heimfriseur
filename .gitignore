@@ -9,3 +9,8 @@ firebase-debug*.log
 *service-account*.json
 
 public/ocr/
+
+dist-firebase/
+*debug.log
+firebase-import*.json
+*.dump

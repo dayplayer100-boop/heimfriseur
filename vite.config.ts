@@ -7,13 +7,20 @@ const version = JSON.parse(
   readFileSync(new URL("./package.json", import.meta.url), "utf8"),
 ).version;
 const buildId = version + "-" + Date.now();
+let outputDirectory = "dist";
 export default defineConfig(({ mode }) => {
   assertPublicSupabaseKey(
     loadEnv(mode, process.cwd(), "VITE_").VITE_SUPABASE_ANON_KEY || "",
   );
+  const backend =
+    loadEnv(mode, process.cwd(), "VITE_").VITE_BACKEND ||
+    (mode === "firebase" || mode === "firebase-emulator"
+      ? "firebase"
+      : "supabase");
   return {
     test: { maxWorkers: 1, fileParallelism: false },
     define: {
+      "import.meta.env.VITE_BACKEND": JSON.stringify(backend),
       __APP_VERSION__: JSON.stringify(version),
       __APP_BUILD_ID__: JSON.stringify(buildId),
     },
@@ -22,13 +29,16 @@ export default defineConfig(({ mode }) => {
       {
         name: "heimfriseur-version",
         apply: "build",
+        configResolved(config) {
+          outputDirectory = config.build.outDir;
+        },
         closeBundle() {
           writeFileSync(
-            "dist/version.json",
+            outputDirectory + "/version.json",
             JSON.stringify({ version, buildId }),
           );
           writeFileSync(
-            "dist/sw.js",
+            outputDirectory + "/sw.js",
             "// Build " + buildId + "\n" + readFileSync("public/sw.js", "utf8"),
           );
         },
@@ -38,7 +48,12 @@ export default defineConfig(({ mode }) => {
       headers: Object.fromEntries(
         JSON.parse(
           readFileSync(
-            new URL("./firebase.clean.json", import.meta.url),
+            new URL(
+              backend === "firebase"
+                ? "./firebase.parallel.json"
+                : "./firebase.clean.json",
+              import.meta.url,
+            ),
             "utf8",
           ),
         )
@@ -52,6 +67,9 @@ export default defineConfig(({ mode }) => {
           manualChunks: {
             react: ["react", "react-dom"],
             supabase: ["@supabase/supabase-js"],
+            firebaseAuth: ["firebase/auth"],
+            firebaseFirestore: ["firebase/firestore"],
+            firebaseCore: ["firebase/app"],
           },
         },
       },

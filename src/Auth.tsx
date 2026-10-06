@@ -1,3 +1,5 @@
+import { firebaseEnabled } from "./firebaseClient";
+import { FirebaseAuthScreen } from "./FirebaseAuth";
 import { authRedirect, authError } from "./authSupport";
 import { PasswordInput } from "./PasswordInput";
 import { useEffect, useState } from "react";
@@ -46,6 +48,9 @@ export function ConnectionForm() {
   );
 }
 export function Auth() {
+  return firebaseEnabled ? <FirebaseAuthScreen /> : <SupabaseAuthScreen />;
+}
+function SupabaseAuthScreen() {
   const invitation = sessionStorage.getItem("heimfriseur-invite");
   const { enterDemo, setError } = useStore();
   const [mode, setMode] = useState("login"),

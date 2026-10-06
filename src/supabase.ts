@@ -1,3 +1,4 @@
+import { firebaseEnabled, firebaseAuthBridge } from "./firebaseClient";
 import { assertPublicSupabaseKey } from "./publicConnection";
 import { createClient } from "@supabase/supabase-js";
 import { deploymentConnection } from "./deployment";
@@ -9,7 +10,9 @@ const saved = (() => {
   }
 })();
 export const canConfigureConnection =
-  !import.meta.env.VITE_SUPABASE_URL && !deploymentConnection.url;
+  !firebaseEnabled &&
+  !import.meta.env.VITE_SUPABASE_URL &&
+  !deploymentConnection.url;
 export const connection = {
   url:
     import.meta.env.VITE_SUPABASE_URL || deploymentConnection.url || saved.url,
@@ -19,8 +22,9 @@ export const connection = {
     saved.key,
 };
 assertPublicSupabaseKey(connection.key || "");
-export const supabase =
-  connection.url && connection.key
+export const supabase = firebaseEnabled
+  ? (firebaseAuthBridge as unknown as ReturnType<typeof createClient> | null)
+  : connection.url && connection.key
     ? createClient(connection.url, connection.key, {
         auth: { flowType: "pkce", detectSessionInUrl: true },
         global: {

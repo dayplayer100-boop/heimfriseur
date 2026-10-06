@@ -1,0 +1,168 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signed() { return request.auth != null && request.auth.token.email_verified == true; }
+    function admin() { return signed() && exists(/databases/$(database)/documents/hf_admins/$(request.auth.uid)) && get(/databases/$(database)/documents/hf_admins/$(request.auth.uid)).data.is_active == true; }
+    function owner(b) { return signed() && (exists(/databases/$(database)/documents/hf_businesses/$(b)) ? (get(/databases/$(database)/documents/hf_businesses/$(b)).data.get('_migration_state','complete') != 'in_progress' && (get(/databases/$(database)/documents/hf_businesses/$(b)).data.owner_user_id == request.auth.uid || admin())) : false); }
+    function member(b) { return get(/databases/$(database)/documents/hf_businesses/$(b)/members/$(request.auth.uid)).data; }
+    function active(b) { return signed() && get(/databases/$(database)/documents/hf_businesses/$(b)).data.get('_migration_state','complete') != 'in_progress' && member(b).is_active == true; }
+    function permission(b, key) { return signed() && get(/databases/$(database)/documents/hf_businesses/$(b)).data.get('_migration_state','complete') != 'in_progress' && member(b).is_active == true && (member(b).role == 'owner' || member(b).permissions.get(key, key in ['record_payments','close_visits']) == true); }
+    function scope(b, facility) { return facility != '' && facility in member(b).get('facility_ids', []); }
+    function rec(b,t,id) { return get(/databases/$(database)/documents/hf_businesses/$(b)/records/$(t + '~' + id)).data; }
+    function after(b,t,id) { return getAfter(/databases/$(database)/documents/hf_businesses/$(b)/records/$(t + '~' + id)).data; }
+    function assigned(b,id) { return request.auth.uid in rec(b,'appointments',id).assigned_users; }
+    function invite(id) { return get(/databases/$(database)/documents/hf_invites/$(id)).data; }
+    function accepts(id,b) { let i = invite(id); return signed() && i.business_id == b && i.email == request.auth.token.email.lower() && i.accepted_at == null && i.revoked_at == null && i.expires_at_ms > request.time.toMillis() && getAfter(/databases/$(database)/documents/hf_invites/$(id)).data.accepted_by == request.auth.uid; }
+    match /hf_admins/{uid} {
+      allow get: if signed() && (request.auth.uid == uid || admin());
+      allow list: if admin();
+      // Protected operator registry: no browser (including app-admin) can grant
+      // itself or another person platform privileges.
+      allow write: if false;
+    }
+    match /hf_admin_audit/{id} {
+      allow read: if admin();
+      allow create: if admin() && request.resource.data.keys().hasOnly(['actor_id','action','business_id','created_at','details']) && request.resource.data.actor_id == request.auth.uid;
+      allow update, delete: if false;
+    }
+    match /hf_accounts/{uid} {
+      allow get: if signed() && uid == request.auth.uid;
+      allow create: if signed() && uid == request.auth.uid && (
+        (request.resource.data.keys().hasOnly(['business_id']) && request.resource.data.business_id == uid && getAfter(/databases/$(database)/documents/hf_businesses/$(uid)).data.owner_user_id == uid) ||
+        (request.resource.data.keys().hasOnly(['business_id','invite_id']) && accepts(request.resource.data.invite_id,request.resource.data.business_id))
+      );
+      allow update, delete, list: if false;
+    }
+    match /hf_invites/{id} {
+      allow get: if signed() && (owner(resource.data.business_id) || resource.data.email == request.auth.token.email.lower());
+      allow list: if signed() && owner(resource.data.business_id);
+      allow create: if owner(request.resource.data.business_id) && request.resource.data.keys().hasOnly(['business_id','email','expires_at','expires_at_ms','accepted_at','revoked_at']) && request.resource.data.accepted_at == null && request.resource.data.revoked_at == null && request.resource.data.email is string && request.resource.data.expires_at_ms > request.time.toMillis() && request.resource.data.expires_at_ms <= request.time.toMillis() + 604800000;
+      allow update: if (
+        owner(resource.data.business_id) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['revoked_at'])
+      ) || (
+        signed() && resource.data.email == request.auth.token.email.lower() && resource.data.accepted_at == null && resource.data.revoked_at == null && resource.data.expires_at_ms > request.time.toMillis() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['accepted_at','accepted_by']) && request.resource.data.accepted_by == request.auth.uid && getAfter(/databases/$(database)/documents/hf_accounts/$(request.auth.uid)).data.business_id == resource.data.business_id
+      );
+      allow delete: if false;
+    }
+    match /hf_businesses/{b} {
+      allow get: if signed() && (b == request.auth.uid || active(b));
+      allow list: if admin();
+      allow create: if signed() && b == request.auth.uid && request.resource.data.owner_user_id == request.auth.uid && request.resource.data.owner_email == request.auth.token.email && !exists(/databases/$(database)/documents/hf_accounts/$(request.auth.uid)) && request.resource.data.keys().hasOnly(['name','owner_user_id','owner_email','created_at']);
+      allow update: if owner(b) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name']);
+      allow delete: if false;
+      match /members/{uid} {
+        allow get: if signed() && (request.auth.uid == uid || owner(b));
+        allow list: if owner(b);
+        allow create: if request.resource.data.keys().hasOnly(['id','user_id','business_id','role','display_name','is_active','facility_ids','permissions','onboarding_completed','setup_completed']) && request.resource.data.id == uid && request.resource.data.user_id == uid && request.resource.data.business_id == b && (
+          (signed() && uid == request.auth.uid && b == uid && getAfter(/databases/$(database)/documents/hf_businesses/$(b)).data.owner_user_id == uid && request.resource.data.role == 'owner') ||
+          (signed() && uid == request.auth.uid && request.resource.data.role == 'employee' && request.resource.data.is_active == true && request.resource.data.facility_ids == [] && request.resource.data.permissions == {'record_payments':true,'close_visits':true} && accepts(getAfter(/databases/$(database)/documents/hf_accounts/$(uid)).data.invite_id,b))
+        );
+        allow update: if (owner(b) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['display_name','is_active','permissions','facility_ids','onboarding_completed','setup_completed']) && (resource.data.role != 'owner' || request.resource.data.is_active == true)) ||
+          (active(b) && uid == request.auth.uid && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['onboarding_completed']) && request.resource.data.onboarding_completed == true);
+        allow delete: if false;
+      }
+      match /state/revision {
+        allow read: if active(b);
+        allow create: if signed() && b == request.auth.uid && getAfter(/databases/$(database)/documents/hf_businesses/$(b)).data.owner_user_id == request.auth.uid && request.resource.data.value == 0;
+        allow update: if signed() && (active(b) || getAfter(/databases/$(database)/documents/hf_businesses/$(b)/members/$(request.auth.uid)).data.is_active == true) && request.resource.data.keys().hasOnly(['value']) && request.resource.data.value == resource.data.value + 1;
+        allow delete: if false;
+      }
+      match /catalogue/main {
+        allow read: if active(b);
+        allow create: if owner(b) || (signed() && b == request.auth.uid && getAfter(/databases/$(database)/documents/hf_businesses/$(b)).data.owner_user_id == request.auth.uid);
+        allow update: if owner(b);
+        allow delete: if false;
+      }
+      match /audit/{id} {
+        allow read: if owner(b);
+        allow create: if active(b) && request.resource.data.actor_id == request.auth.uid && request.resource.data.keys().hasOnly(['id','actor_id','action','record_id','details','created_at']);
+        allow update, delete: if false;
+      }
+      match /billing/{id} {
+        allow read: if owner(b) || (permission(b,'view_billing') && scope(b,resource.data._facility_id));
+        allow create, update: if (owner(b) || permission(b,'view_billing')) && request.resource.data.user_id == get(/databases/$(database)/documents/hf_businesses/$(b)).data.owner_user_id && request.resource.data.business_id == b && request.resource.data.keys().hasOnly(['id','user_id','business_id','_table','_facility_id','customer_id','billing_name','street','postal_code','city','phone','email','payment_method_id','delivery','created_at','updated_at']) && (owner(b) || scope(b,rec(b,'customers',request.resource.data.customer_id).facility_id));
+        allow delete: if owner(b);
+      }
+      match /records/{id} {
+        function validBase() {
+          let d = request.resource.data;
+          return d.id is string && id == d._table + '~' + d.id && d.business_id == b && d.user_id == getAfter(/databases/$(database)/documents/hf_businesses/$(b)).data.owner_user_id && d._facility_id is string && !d.keys().hasAny(['total_price','material_cost','price_override','price_snapshot','amount','permissions','role']);
+        }
+        function immutableBase() { return request.resource.data.diff(resource.data).affectedKeys().hasOnly(request.resource.data.keys().removeAll(['id','user_id','business_id','_table','created_by','created_at','_facility_id'])); }
+        function customerCreate(d) { return permission(b,'add_customers') && scope(b,d.facility_id) && rec(b,'groups',d.group_id).facility_id == d.facility_id && d._facility_id == d.facility_id; }
+        function customerUpdate(d) { return permission(b,'edit_customers') && scope(b,resource.data.facility_id) && d.facility_id == resource.data.facility_id && rec(b,'groups',d.group_id).facility_id == d.facility_id; }
+        function running(d) { return assigned(b,d.appointment_id) && d.performed_by == request.auth.uid; }
+        function canStart(d) {
+          let a = rec(b,'appointments',d.appointment_id);
+          let m = rec(b,'appointment_customers',d.appointment_customer_id);
+          return running(d) && d.id == d.appointment_customer_id && m.customer_id == d.customer_id && m.appointment_id == d.appointment_id && m.status == 'Offen' && a.status in ['Geplant','Verschoben','In Bearbeitung'] && d.end_time == null && getAfter(/databases/$(database)/documents/hf_businesses/$(b)/locks/$( 'actor:' + request.auth.uid )).data.treatment_id == d.id && getAfter(/databases/$(database)/documents/hf_businesses/$(b)/locks/$( 'customer:' + d.customer_id )).data.treatment_id == d.id;
+        }
+        allow read: if owner(b) || (active(b) && (resource.data._table in ['services','payment_methods'] || scope(b,resource.data._facility_id)));
+        function employeeCreate(d) {
+          return d._table == 'customers' ? customerCreate(d) :
+            d._table == 'groups' ? (permission(b,'edit_schedule') && scope(b,d.facility_id)) :
+            d._table == 'customer_default_services' ? (permission(b,'edit_customers') && scope(b,after(b,'customers',d.customer_id).facility_id)) :
+            d._table == 'appointments' ? (permission(b,'edit_schedule') && scope(b,d.facility_id) && d.assigned_users == [request.auth.uid] && rec(b,'groups',d.group_id).facility_id == d.facility_id) :
+            d._table == 'appointment_customers' ? (request.auth.uid in after(b,'appointments',d.appointment_id).assigned_users && d.id == d.appointment_id + ':' + d.customer_id && rec(b,'customers',d.customer_id).facility_id == after(b,'appointments',d.appointment_id).facility_id && d.status == 'Offen') :
+            d._table == 'treatments' ? canStart(d) :
+            d._table == 'treatment_services' ? (after(b,'treatments',d.treatment_id).performed_by == request.auth.uid && (exists(/databases/$(database)/documents/hf_businesses/$(b)/records/$( 'treatments~' + d.treatment_id )) ? rec(b,'treatments',d.treatment_id).end_time == null : after(b,'treatments',d.treatment_id).end_time == null)) :
+            d._table == 'color_formulas' ? (assigned(b,after(b,'treatments',d.treatment_id).appointment_id) && after(b,'treatments',d.treatment_id).performed_by == request.auth.uid) :
+            d._table == 'treatment_payments' ? (permission(b,'record_payments') && assigned(b,rec(b,'treatments',d.treatment_id).appointment_id)) :
+            d._table == 'feedback' ? (d.created_by == request.auth.uid && d.status == 'Offen' && d.message.size() <= 4000) : false;
+        }
+        function employeeUpdate(d) {
+          return d._table == 'customers' ? (
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['next_due_date','temporary_due_date','rhythm_anchor_date']) ? scope(b,resource.data.facility_id) : customerUpdate(d)
+          ) :
+          d._table == 'appointments' ? (assigned(b,resource.data.id) && d.diff(resource.data).affectedKeys().hasOnly(['status','actual_start_time','actual_end_time','appointment_date','start_time','selected_customer_id','auto_include_due','all_groups','cohort_id','notes']) && (permission(b,'edit_schedule') || d.diff(resource.data).affectedKeys().hasOnly(['status','actual_start_time','actual_end_time'])) && (d.status != 'Abgeschlossen' || (permission(b,'close_visits') && resource.data.responsible_user == request.auth.uid))) :
+          d._table == 'appointment_customers' ? (assigned(b,resource.data.appointment_id) && (
+            resource.data.status == 'Offen' ? (d.diff(resource.data).affectedKeys().hasOnly(['status','non_completion_reason','followup_date','entry_type']) && (d.status == 'Nicht durchgeführt' || (d.status == 'In Behandlung' && after(b,'treatments',resource.data.id).performed_by == request.auth.uid && after(b,'treatments',resource.data.id).end_time == null))) :
+            (resource.data.status == 'In Behandlung' && d.status == 'Erledigt' && after(b,'treatments',resource.data.id).performed_by == request.auth.uid && after(b,'treatments',resource.data.id).end_time != null && d.diff(resource.data).affectedKeys().hasOnly(['status']))
+          )) :
+          d._table == 'treatments' ? (resource.data.end_time == null && running(resource.data) && d.diff(resource.data).affectedKeys().hasOnly(['end_time','duration_minutes','notes','service_snapshots'])) :
+          d._table == 'treatment_payments' ? (permission(b,'record_payments') && assigned(b,rec(b,'treatments',resource.data.treatment_id).appointment_id) && d.treatment_id == resource.data.treatment_id) : false;
+        }
+        allow create: if validBase() && (owner(b) ? true : (
+          signed() && b == request.auth.uid && request.resource.data._table == 'profiles' && request.resource.data.id == request.auth.uid ? true : active(b) && employeeCreate(request.resource.data)
+        ));
+        allow update: if validBase() && immutableBase() && (owner(b) ? true : active(b) && employeeUpdate(request.resource.data));
+        allow delete: if owner(b) || (active(b) && (
+          (resource.data._table == 'customer_default_services' && permission(b,'edit_customers') && scope(b,rec(b,'customers',resource.data.customer_id).facility_id)) ||
+          (resource.data._table in ['treatment_services','color_formulas'] && rec(b,'treatments',resource.data.treatment_id).performed_by == request.auth.uid && rec(b,'treatments',resource.data.treatment_id).end_time == null)
+        ));
+      }
+      match /finance/{id} {
+        function treatment() { return rec(b,'treatments',id); }
+        function newTreatment() { return after(b,'treatments',id); }
+        function catalog() { return get(/databases/$(database)/documents/hf_businesses/$(b)/catalogue/main).data; }
+        function selectedLineValid(l, i, old, cat, facility) {
+          let retained = l in old;
+          let svc = cat.services.get(l.service_id, {'is_active':false,'name':'','duration':0,'price':0});
+          return l.service_id == request.resource.data.service_ids[i] && (retained ? true : (svc.is_active == true && l == {'service_id': l.service_id, 'name': svc.name, 'duration': svc.duration, 'price': cat.prices.get(facility + ':' + l.service_id,svc.price)}));
+        }
+        function lineValid(i, old, cat, facility) {
+          return request.resource.data.lines.size() <= i ? true : selectedLineValid(request.resource.data.lines[i], i, old, cat, facility);
+        }
+        function price(lines,i) {return lines.size() > i ? lines[i].price : 0;}
+        function validFinance(old) {
+          let f = request.resource.data;
+          let t = newTreatment();
+          let cat = catalog();
+          return f.keys().hasOnly(['treatment_id','total_price','material_cost','price_override','completed','performed_by','lines','service_ids']) && f.treatment_id == id && f.performed_by == t.performed_by && f.completed == (t.end_time != null) && f.material_cost is number && f.material_cost >= 0 && f.total_price is number && f.total_price >= 0 && f.service_ids.toSet().size() == f.service_ids.size() && f.service_ids.size() == f.lines.size() && f.lines.size() <= 4 && lineValid(0,old,cat,t._facility_id) && lineValid(1,old,cat,t._facility_id) && lineValid(2,old,cat,t._facility_id) && lineValid(3,old,cat,t._facility_id) && (
+            (f.price_override == null && f.total_price == price(f.lines,0)+price(f.lines,1)+price(f.lines,2)+price(f.lines,3)) || (permission(b,'override_prices') && f.price_override == f.total_price)
+          );
+        }
+        allow read: if owner(b) || (active(b) && resource.data.performed_by == request.auth.uid && resource.data.completed == false);
+        allow create: if owner(b) || (active(b) && newTreatment().performed_by == request.auth.uid && assigned(b,newTreatment().appointment_id) && validFinance([]));
+        allow update: if owner(b) || (active(b) && treatment().end_time == null && treatment().performed_by == request.auth.uid && validFinance(resource.data.lines));
+        allow delete: if false;
+      }
+      match /locks/{id} {
+        allow read: if active(b);
+        allow create, update: if owner(b) || (active(b) && request.resource.data.performed_by == request.auth.uid && after(b,'treatments',request.resource.data.treatment_id).performed_by == request.auth.uid && after(b,'treatments',request.resource.data.treatment_id).end_time == null && (exists(/databases/$(database)/documents/hf_businesses/$(b)/locks/$(id)) ? resource.data.treatment_id == request.resource.data.treatment_id : true));
+        allow delete: if owner(b) || (active(b) && resource.data.performed_by == request.auth.uid && after(b,'treatments',resource.data.treatment_id).end_time != null);
+      }
+    }
+    match /{path=**} { allow read, write: if false; }
+  }
+}

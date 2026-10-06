@@ -1,0 +1,4 @@
+{
+  "indexes": [{"collectionGroup":"finance","queryScope":"COLLECTION","fields":[{"fieldPath":"performed_by","order":"ASCENDING"},{"fieldPath":"completed","order":"ASCENDING"}]}],
+  "fieldOverrides": []
+}

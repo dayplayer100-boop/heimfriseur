@@ -1,3 +1,4 @@
+import { firebaseEnabled } from "./firebaseClient";
 import { AccountSecurity } from "./AccountSecurity";
 import { SaveStatus } from "./SaveStatus";
 import { SetupGuide } from "./SetupGuide";
@@ -414,7 +415,15 @@ export function App() {
               <SaveStatus />
             </div>
             <AppUpdate />
-            <main>{content}</main>
+            <main>
+              {firebaseEnabled && (
+                <p className="warning">
+                  Firebase-Testversion · Daten werden getrennt von Supabase
+                  gespeichert.
+                </p>
+              )}
+              {content}
+            </main>
             <footer className="app-footer">
               <Scissors size={14} />
               <span>HeimFriseur</span>
