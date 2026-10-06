@@ -18,6 +18,15 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
+      - name: Registry-Verfuegbarkeit pruefen
+        run: |
+          node --input-type=module <<'JS'
+          import fs from 'node:fs';
+          const lock=JSON.parse(fs.readFileSync('package-lock.json'));
+          const rows=Object.entries(lock.packages).filter(([k,v])=>k&&v.resolved?.startsWith('https://registry.npmjs.org/'));
+          let next=0;
+          await Promise.all(Array.from({length:12},async()=>{while(next<rows.length){const [path,p]=rows[next++];const r=await fetch(p.resolved,{method:'HEAD'});if(!r.ok){const name=path.split('node_modules/').at(-1);const meta=await(await fetch('https://registry.npmjs.org/'+name)).json();console.log('UNAVAILABLE',name,p.version,'latest',meta['dist-tags']?.latest);}}}));
+          JS
       - run: npm ci
       - run: npm audit --audit-level=high
       - run: npm test
