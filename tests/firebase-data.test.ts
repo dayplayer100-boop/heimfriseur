@@ -82,7 +82,7 @@ describe("Firebase data preservation and financial separation", () => {
       notes: "Historische Rezeptur",
       formula_date: "2026-10-06",
     });
-    const { records, finances } = splitFirebaseData(
+    const { records, finances, paymentContacts } = splitFirebaseData(
       data,
       "test-company",
       "demo",
@@ -90,6 +90,7 @@ describe("Firebase data preservation and financial separation", () => {
     const restored = joinFirebaseData(
       [...records.values()],
       [...finances.values()],
+      [...paymentContacts.values()],
     );
     for (const table of Object.keys(emptyData()) as (keyof Data)[]) {
       expect(restored[table]).toHaveLength(data[table].length);
@@ -107,7 +108,15 @@ describe("Firebase data preservation and financial separation", () => {
       for (const line of row.service_snapshots || [])
         expect(line).not.toHaveProperty("price_snapshot");
     }
+    const payment = records.get("treatment_payments~payment")!;
+    expect(payment).not.toHaveProperty("billing_name_snapshot");
+    expect(payment).not.toHaveProperty("billing_address_snapshot");
+    expect(paymentContacts.get("payment")?.billing_name_snapshot).toBe(
+      "Beispiel Betreuer",
+    );
     const employee = joinFirebaseData([...records.values()], []);
+    expect(employee.treatment_payments[0].billing_name_snapshot).toBe("");
+    expect(employee.treatment_payments[0].billing_address_snapshot).toBe("");
     expect(employee.treatments[0].total_price).toBeNull();
     expect(employee.treatment_services[0].price_snapshot).toBeNull();
     expect(employee.treatment_services[0].service_name_snapshot).toBe(

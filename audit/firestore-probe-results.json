@@ -1,0 +1,41 @@
+{
+  "projectId": "demo-heimfriseur-audit",
+  "sourceVersion": "6.4.0",
+  "findings": [
+    {
+      "id": "BOUNDARY",
+      "result": "PASS",
+      "detail": "Foreign tenant, anonymous, unverified and self-promotion denied"
+    },
+    {
+      "id": "SEC-01",
+      "result": "REPRODUCED",
+      "detail": "Employee without view_billing reads invoice contact snapshots"
+    },
+    {
+      "id": "LOGIC-01",
+      "result": "REPRODUCED",
+      "detail": "Direct client closes visit while customer is open and treatment is running"
+    },
+    {
+      "id": "LOGIC-02",
+      "result": "REPRODUCED",
+      "detail": "Direct client records negative duration and end before start, without finance completion"
+    },
+    {
+      "id": "MATH-01",
+      "result": "REPRODUCED",
+      "detail": "Correct decimal 0.30 rejected; binary floating sum 0.30000000000000004 accepted"
+    },
+    {
+      "id": "AUTH-01",
+      "result": "REPRODUCED",
+      "detail": "Director can create second owner member inconsistent with root owner_user_id"
+    },
+    {
+      "id": "AUDIT-01",
+      "result": "REPRODUCED",
+      "detail": "Employee can append arbitrary privileged action label and historical timestamp"
+    }
+  ]
+}

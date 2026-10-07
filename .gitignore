@@ -14,3 +14,6 @@ dist-firebase/
 *debug.log
 firebase-import*.json
 *.dump
+
+.heimfriseur-backups/
+payment-contacts-*.json

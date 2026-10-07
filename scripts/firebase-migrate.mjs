@@ -188,7 +188,11 @@ for (const a of data.appointments) {
   a.assigned_users = [uid];
   a.responsible_user = uid;
 }
-const { records, finances } = splitFirebaseData(data, uid, uid);
+const { records, finances, paymentContacts } = splitFirebaseData(
+  data,
+  uid,
+  uid,
+);
 const writes = [];
 const set = (name, row) => ({
   update: { name, fields: encode(row).mapValue.fields },
@@ -200,6 +204,8 @@ for (const [id, row] of records)
   else writes.push(set(root + "/records/" + id, row));
 for (const [id, row] of finances)
   writes.push(set(root + "/finance/" + id, row));
+for (const [id, row] of paymentContacts)
+  writes.push(set(root + "/payment_contacts/" + id, row));
 writes.push(
   set(root + "/catalogue/main", {
     services: Object.fromEntries(
@@ -291,6 +297,22 @@ for (const [id, row] of finances)
     throw Error(
       "Ein Finanzdatensatz stimmt nicht überein. Marker bleibt aktiv.",
     );
+const savedContacts = await all(root + "/payment_contacts");
+for (const [id, expected] of paymentContacts) {
+  const remote = savedContacts.find((d) => d.name.endsWith("/" + id));
+  if (
+    !remote ||
+    !equal(
+      Object.fromEntries(
+        Object.entries(remote.fields).map(([k, v]) => [k, decode(v)]),
+      ),
+      expected,
+    )
+  )
+    throw Error(
+      "Geschützter Zahlungskontakt stimmt nicht überein. Marker bleibt aktiv.",
+    );
+}
 for (const row of data.customer_billing) {
   const remote = savedBilling.find((d) => d.name.endsWith("/" + row.id));
   if (
@@ -315,10 +337,13 @@ await request(
           name: root,
           fields: encode({
             _migration_state: "complete",
+            payment_contacts_schema: 1,
             name: data.profiles[0]?.business_name || team.business.name,
           }).mapValue.fields,
         },
-        updateMask: { fieldPaths: ["_migration_state", "name"] },
+        updateMask: {
+          fieldPaths: ["_migration_state", "name", "payment_contacts_schema"],
+        },
       },
     ],
   },

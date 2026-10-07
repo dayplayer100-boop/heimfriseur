@@ -51,6 +51,7 @@ suite("Firebase Spark real transaction workflows", () => {
       base = "hf_businesses/owner";
     b.set(doc(db, base), {
       name: "Test",
+      payment_contacts_schema: 1,
       owner_user_id: "owner",
       owner_email: "owner@test.invalid",
       created_at: new Date().toISOString(),
@@ -222,6 +223,80 @@ suite("Firebase Spark real transaction workflows", () => {
     });
     const paid = await owner.snapshot();
     expect(paid.data.treatment_payments[0].amount).toBe(31);
+    // Phase 1: contact snapshots are private even when payment status is public.
+    await owner.mutate("save_billing", {
+      p_customer: customer,
+      p_data: {
+        billing_name: "Fiktive Betreuung",
+        street: "Testweg 1",
+        postal_code: "12345",
+        city: "Teststadt",
+        phone: "",
+        email: "fake@test.invalid",
+        payment_method_id: null,
+        delivery: "Post",
+      },
+    });
+    await owner.mutate("record_payment", {
+      p_treatment: treatment,
+      p_data: { payment_method_id: null, status: "Offen" },
+    });
+    const paymentId = (await owner.snapshot()).data.treatment_payments[0].id;
+    const privateRef = doc(
+      workerDb,
+      "hf_businesses",
+      "owner",
+      "payment_contacts",
+      paymentId,
+    );
+    const publicRef = doc(
+      workerDb,
+      "hf_businesses",
+      "owner",
+      "records",
+      "treatment_payments~" + paymentId,
+    );
+    expect((await getDoc(publicRef)).data()).not.toHaveProperty(
+      "billing_name_snapshot",
+    );
+    expect((await getDoc(publicRef)).data()).not.toHaveProperty(
+      "billing_address_snapshot",
+    );
+    await expect(getDoc(privateRef)).rejects.toBeTruthy();
+    await expect(
+      updateDoc(publicRef, { billing_name_snapshot: "Verbotener Kontakt" }),
+    ).rejects.toBeTruthy();
+    await worker.mutate("record_payment", {
+      p_treatment: treatment,
+      p_data: { payment_method_id: null, status: "Bezahlt" },
+    });
+    expect(
+      (await owner.snapshot()).data.treatment_payments[0].billing_name_snapshot,
+    ).toBe("Fiktive Betreuung");
+    expect(
+      (await worker.snapshot()).data.treatment_payments[0]
+        .billing_name_snapshot,
+    ).toBe("");
+    const originalPermissions = (await owner.snapshot()).team.members.find(
+      (m) => m.user_id === "employee",
+    )!.permissions;
+    await owner.mutate("set_member_permissions", {
+      p_member: "employee",
+      p_permissions: { ...originalPermissions, view_billing: true },
+    });
+    expect((await getDoc(privateRef)).data()?.billing_name_snapshot).toBe(
+      "Fiktive Betreuung",
+    );
+    expect(
+      (await worker.snapshot()).data.treatment_payments[0]
+        .billing_address_snapshot,
+    ).toBe("Testweg 1 12345 Teststadt");
+    await owner.mutate("set_member_permissions", {
+      p_member: "employee",
+      p_permissions: { ...originalPermissions, view_billing: false },
+    });
+    await expect(getDoc(privateRef)).rejects.toBeTruthy();
+
     for (const next of snap.data.appointment_customers.filter(
       (m) => m.customer_id !== customer,
     )) {

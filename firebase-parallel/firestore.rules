@@ -58,7 +58,7 @@ service cloud.firestore {
     match /hf_businesses/{b} {
       allow get: if signed() && (b == request.auth.uid || active(b));
       allow list: if admin();
-      allow create: if signed() && b == request.auth.uid && request.resource.data.owner_user_id == request.auth.uid && request.resource.data.owner_email == request.auth.token.email && !exists(/databases/$(database)/documents/hf_accounts/$(request.auth.uid)) && request.resource.data.keys().hasOnly(['name','owner_user_id','owner_email','created_at']);
+      allow create: if signed() && b == request.auth.uid && request.resource.data.owner_user_id == request.auth.uid && request.resource.data.owner_email == request.auth.token.email && !exists(/databases/$(database)/documents/hf_accounts/$(request.auth.uid)) && request.resource.data.keys().hasOnly(['name','owner_user_id','owner_email','created_at','payment_contacts_schema']) && request.resource.data.payment_contacts_schema == 1;
       allow update: if (owner(b) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name'])) || (owner(b) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['owner_user_id','owner_email']) && request.resource.data.owner_email == get(/databases/$(database)/documents/hf_users/$(request.resource.data.owner_user_id)).data.email && getAfter(/databases/$(database)/documents/hf_businesses/$(b)/members/$(request.resource.data.owner_user_id)).data.role == 'owner' && getAfter(/databases/$(database)/documents/hf_accounts/$(request.resource.data.owner_user_id)).data.business_id == b);
       allow delete: if false;
       match /members/{uid} {
@@ -95,10 +95,27 @@ service cloud.firestore {
         allow create, update: if (owner(b) || permission(b,'view_billing')) && request.resource.data.user_id == getAfter(/databases/$(database)/documents/hf_businesses/$(b)).data.owner_user_id && request.resource.data.business_id == b && request.resource.data.keys().hasOnly(['id','user_id','business_id','_table','_facility_id','customer_id','billing_name','street','postal_code','city','phone','email','payment_method_id','delivery','created_at','updated_at']) && (owner(b) || scope(b,rec(b,'customers',request.resource.data.customer_id).facility_id));
         allow delete: if owner(b);
       }
+      match /payment_contacts/{id} {
+        function contactPermission(d) {
+          return permission(b,'view_billing') && scope(b,d._facility_id);
+        }
+        function validContact() {
+          let d = request.resource.data;
+          let payment = after(b,'treatment_payments',id);
+          let treatment = after(b,'treatments',d.treatment_id);
+          return d.keys().hasAll(['id','treatment_id','business_id','user_id','_facility_id','billing_name_snapshot','billing_address_snapshot']) && d.keys().hasOnly(['id','treatment_id','business_id','user_id','_facility_id','billing_name_snapshot','billing_address_snapshot']) &&
+            d.id == id && payment.treatment_id == d.treatment_id && d.business_id == b &&
+            d.user_id == getAfter(/databases/$(database)/documents/hf_businesses/$(b)).data.owner_user_id &&
+            d._facility_id == treatment._facility_id && d.billing_name_snapshot is string && d.billing_name_snapshot.size() <= 500 && d.billing_address_snapshot is string && d.billing_address_snapshot.size() <= 2000;
+        }
+        allow read: if owner(b) || (active(b) && contactPermission(resource.data));
+        allow create, update: if validContact() && (owner(b) || (active(b) && contactPermission(request.resource.data) && assigned(b,after(b,'treatments',request.resource.data.treatment_id).appointment_id)));
+        allow delete: if owner(b) || (active(b) && contactPermission(resource.data) && assigned(b,rec(b,'treatments',resource.data.treatment_id).appointment_id));
+      }
       match /records/{id} {
         function validBase() {
           let d = request.resource.data;
-          return d.id is string && id == d._table + '~' + d.id && d.business_id == b && d.user_id == getAfter(/databases/$(database)/documents/hf_businesses/$(b)).data.owner_user_id && d._facility_id is string && !d.keys().hasAny(['total_price','material_cost','price_override','price_snapshot','amount','permissions','role']);
+          return d.id is string && id == d._table + '~' + d.id && d.business_id == b && d.user_id == getAfter(/databases/$(database)/documents/hf_businesses/$(b)).data.owner_user_id && d._facility_id is string && d._table != 'customer_billing' && (d._table != 'treatment_payments' || d.keys().hasOnly(['id','user_id','business_id','_table','_facility_id','created_at','treatment_id','payment_method_id','method_name_snapshot','status','delivery','recorded_by','recorded_at'])) && !d.keys().hasAny(['total_price','material_cost','price_override','price_snapshot','amount','permissions','role','billing_name_snapshot','billing_address_snapshot']);
         }
         function immutableBase() { return request.resource.data.diff(resource.data).affectedKeys().hasOnly(request.resource.data.keys().removeAll(['id','user_id','business_id','_table','created_by','created_at','_facility_id'])); }
         function customerCreate(d) { return permission(b,'add_customers') && scope(b,d.facility_id) && rec(b,'groups',d.group_id).facility_id == d.facility_id && d._facility_id == d.facility_id; }
@@ -109,7 +126,7 @@ service cloud.firestore {
           let m = rec(b,'appointment_customers',d.appointment_customer_id);
           return running(d) && d.id == d.appointment_customer_id && m.customer_id == d.customer_id && m.appointment_id == d.appointment_id && m.status == 'Offen' && a.status in ['Geplant','Verschoben','In Bearbeitung'] && d.end_time == null && getAfter(/databases/$(database)/documents/hf_businesses/$(b)/locks/$( 'actor:' + request.auth.uid )).data.treatment_id == d.id && getAfter(/databases/$(database)/documents/hf_businesses/$(b)/locks/$( 'customer:' + d.customer_id )).data.treatment_id == d.id;
         }
-        allow read: if owner(b) || (active(b) && (resource.data._table in ['services','payment_methods'] || scope(b,resource.data._facility_id)));
+        allow read: if owner(b) || (active(b) && get(/databases/$(database)/documents/hf_businesses/$(b)).data.get('payment_contacts_schema',0) == 1 && (resource.data._table in ['services','payment_methods'] || scope(b,resource.data._facility_id)));
         function employeeCreate(d) {
           return d._table == 'customers' ? customerCreate(d) :
             d._table == 'groups' ? (permission(b,'edit_schedule') && scope(b,d.facility_id)) :

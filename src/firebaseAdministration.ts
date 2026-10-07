@@ -74,7 +74,7 @@ export async function changeFirebaseBusinessRole(
   );
   // Read the operational documents once; the transaction checks every preimage
   // and the revision before committing the complete change atomically.
-  const [records, billing, finance] = await Promise.all([
+  const [records, billing, finance, contacts] = await Promise.all([
     role === "owner"
       ? getDocsFromServer(collection(base, "records"))
       : Promise.resolve({ docs: [], size: 0 }),
@@ -84,8 +84,11 @@ export async function changeFirebaseBusinessRole(
     role === "owner"
       ? getDocsFromServer(collection(base, "finance"))
       : Promise.resolve({ docs: [], size: 0 }),
+    role === "owner"
+      ? getDocsFromServer(collection(base, "payment_contacts"))
+      : Promise.resolve({ docs: [], size: 0 }),
   ]);
-  if (records.size + billing.size > 300)
+  if (records.size + billing.size + contacts.size > 300)
     throw Error(
       "Dieses Unternehmen braucht eine gesonderte Übertragung durch den Betreiber. Es wurde nichts verändert.",
     );
@@ -142,7 +145,9 @@ export async function changeFirebaseBusinessRole(
         finance.docs.some((d) => d.data().completed === false))
     )
       throw Error("Bitte zuerst alle laufenden Behandlungen beenden.");
-    const changing = transfer ? [...records.docs, ...billing.docs] : [];
+    const changing = transfer
+      ? [...records.docs, ...billing.docs, ...contacts.docs]
+      : [];
     for (const entry of changing) {
       const fresh = await tx.get(entry.ref);
       if (!sameFirebaseDocument(fresh.data(), entry.data()))

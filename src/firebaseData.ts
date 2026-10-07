@@ -9,7 +9,8 @@ export function splitFirebaseData(
   ownerId: string,
 ) {
   const records = new Map<string, Json>(),
-    finances = new Map<string, Json>();
+    finances = new Map<string, Json>(),
+    paymentContacts = new Map<string, Json>();
   const facility = (table: Table, row: Json): string => {
     if (table === "facilities") return row.id;
     if (row.facility_id) return row.facility_id;
@@ -46,7 +47,23 @@ export function splitFirebaseData(
         for (const key of ["total_price", "material_cost", "price_override"])
           delete out[key];
       }
-      if (table === "treatment_payments") delete out.amount;
+      if (table === "treatment_payments") {
+        const name = String(out.billing_name_snapshot || "");
+        const address = String(out.billing_address_snapshot || "");
+        if (name || address)
+          paymentContacts.set(row.id, {
+            id: row.id,
+            treatment_id: out.treatment_id,
+            business_id: businessId,
+            user_id: ownerId,
+            _facility_id: out._facility_id,
+            billing_name_snapshot: name,
+            billing_address_snapshot: address,
+          });
+        delete out.amount;
+        delete out.billing_name_snapshot;
+        delete out.billing_address_snapshot;
+      }
       records.set(firebaseRecordId(table, row.id), clean(out));
     }
   for (const t of data.treatments) {
@@ -73,15 +90,26 @@ export function splitFirebaseData(
       }),
     );
   }
-  return { records, finances };
+  return { records, finances, paymentContacts };
 }
-export function joinFirebaseData(records: Json[], finances: Json[]): Data {
+export function joinFirebaseData(
+  records: Json[],
+  finances: Json[],
+  paymentContacts: Json[] = [],
+): Data {
   const data = emptyData();
   for (const record of records)
     if (tables.includes(record._table)) {
       const { _table, _facility_id, ...row } = record;
       (data[_table as Table] as Json[]).push(row);
     }
+  for (const payment of data.treatment_payments) {
+    const contact = paymentContacts.find(
+      (c) => c.id === payment.id && c.treatment_id === payment.treatment_id,
+    );
+    payment.billing_name_snapshot = contact?.billing_name_snapshot || "";
+    payment.billing_address_snapshot = contact?.billing_address_snapshot || "";
+  }
   for (const t of data.treatments) {
     const snapshots = (t as unknown as Json).service_snapshots || [];
     data.treatment_services.push(...clean(snapshots));

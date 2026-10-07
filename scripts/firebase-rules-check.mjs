@@ -62,6 +62,7 @@ try {
   const bootstrap = writeBatch(owner);
   bootstrap.set(doc(owner, "hf_businesses/owner"), {
     name: "Test",
+    payment_contacts_schema: 1,
     owner_user_id: "owner",
     owner_email: "owner@test.invalid",
     created_at: "2026-10-06",

@@ -150,7 +150,8 @@ export class FirebaseRepository {
       )
         return structuredClone(this.cache);
       let records: Json[] = [],
-        finance: Json[] = [];
+        finance: Json[] = [],
+        paymentContacts: Json[] = [];
       if (owner) {
         const [r, f] = await Promise.all([
           getDocsFromServer(this.records()),
@@ -208,6 +209,22 @@ export class FirebaseRepository {
         );
         finance = f.docs.map((d) => d.data());
       }
+      if (owner)
+        paymentContacts = (
+          await getDocsFromServer(collection(this.root(), "payment_contacts"))
+        ).docs.map((d) => d.data());
+      else if (permission(member, "view_billing")) {
+        const ids = member.facility_ids || [];
+        for (let n = 0; n < ids.length; n += 30) {
+          const contacts = await getDocsFromServer(
+            query(
+              collection(this.root(), "payment_contacts"),
+              where("_facility_id", "in", ids.slice(n, n + 30)),
+            ),
+          );
+          paymentContacts.push(...contacts.docs.map((d) => d.data()));
+        }
+      }
       let ownerBilling: Data["customer_billing"] = [];
       if (owner)
         ownerBilling = (
@@ -261,7 +278,7 @@ export class FirebaseRepository {
               ) || treatmentIds.has(r.treatment_id),
           );
       }
-      const data = joinFirebaseData(records, finance);
+      const data = joinFirebaseData(records, finance, paymentContacts);
       if (owner) data.customer_billing = ownerBilling;
       const members = owner
         ? (
@@ -599,6 +616,22 @@ export class FirebaseRepository {
           }),
         });
     }
+    // Only an explicitly authorized contact editor may alter protected snapshots.
+    // A status-only employee must never overwrite unread contacts with blank fields.
+    if (owner || permission(team.membership, "view_billing")) {
+      for (const [id, contact] of next.paymentContacts)
+        if (!sameFirebaseDocument(old.paymentContacts.get(id), contact))
+          extra.push({
+            ref: doc(this.root(), "payment_contacts", id),
+            value: contact,
+          });
+      for (const id of old.paymentContacts.keys())
+        if (!next.paymentContacts.has(id))
+          extra.push({
+            ref: doc(this.root(), "payment_contacts", id),
+            remove: true,
+          });
+    }
     const writes: { ref: DocumentReference; value?: Json; remove?: boolean }[] =
       [...extra];
     for (const [id, row] of next.records)
@@ -856,6 +889,7 @@ export async function firebaseInitialize() {
     };
     tx.set(root, {
       name: "Mein Unternehmen",
+      payment_contacts_schema: 1,
       owner_user_id: user.uid,
       owner_email: user.email,
       created_at: new Date().toISOString(),

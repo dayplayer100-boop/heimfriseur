@@ -160,7 +160,10 @@ try {
   if (!revision)
     throw Error("Unternehmensrevision fehlt. Keine Änderung vorgenommen.");
   const records = await all(businessPath + "/records"),
-    billing = await all(businessPath + "/billing"),
+    billing = [
+      ...(await all(businessPath + "/billing")),
+      ...(await all(businessPath + "/payment_contacts")),
+    ],
     members = await all(businessPath + "/members");
   const finance = await all(businessPath + "/finance");
   if (
@@ -227,6 +230,7 @@ try {
       emptyMembers.some((d) => row(d).user_id !== newUid) ||
       (await all(path + "/finance")).length ||
       (await all(path + "/billing")).length ||
+      (await all(path + "/payment_contacts")).length ||
       invites.some((d) => d.document)
     )
       throw Error(
