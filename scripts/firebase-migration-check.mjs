@@ -173,3 +173,143 @@ const absent = await fetch(
 if (absent.status !== 404)
   throw Error("Unverified account unexpectedly became admin");
 console.log("PASS: unverified admin grants rejected without database changes");
+// Ownership transfer: reject existing target data, then move into the preserved
+// company, clean only its empty placeholder and keep the operator independent.
+const successorEmail = `successor-${Date.now()}@test.invalid`;
+const successor = await api(auth + "/accounts:signUp?key=demo-key", {
+  email: successorEmail,
+  password: "SuccessorTestOnly-123!",
+  returnSecureToken: true,
+});
+await api(auth + "/projects/" + project + "/accounts:update", {
+  localId: successor.localId,
+  emailVerified: true,
+});
+const documents = `projects/${project}/databases/(default)/documents`;
+const sourcePath = `${documents}/hf_businesses/${user.localId}`,
+  targetPath = `${documents}/hf_businesses/${successor.localId}`;
+const document = (name, data) => ({
+  update: { name, fields: enc(data).mapValue.fields },
+});
+const commit = async (writes) =>
+  api(
+    `http://127.0.0.1:8080/v1/projects/${project}/databases/(default)/documents:commit`,
+    { writes },
+  );
+await commit([
+  {
+    update: {
+      name: sourcePath,
+      fields: enc({ owner_email: email }).mapValue.fields,
+    },
+    updateMask: { fieldPaths: ["owner_email"] },
+  },
+  document(`${documents}/hf_accounts/${user.localId}`, {
+    business_id: user.localId,
+  }),
+  document(`${documents}/hf_accounts/${successor.localId}`, {
+    business_id: successor.localId,
+  }),
+  document(sourcePath + `/members/${user.localId}`, {
+    id: user.localId,
+    user_id: user.localId,
+    business_id: user.localId,
+    role: "owner",
+    display_name: email,
+    is_active: true,
+  }),
+  document(targetPath, {
+    owner_user_id: successor.localId,
+    owner_email: successorEmail,
+    name: "Empty placeholder",
+  }),
+  document(targetPath + "/state/revision", { value: 0 }),
+  document(targetPath + `/members/${successor.localId}`, {
+    id: successor.localId,
+    user_id: successor.localId,
+    role: "owner",
+    is_active: true,
+  }),
+  document(targetPath + "/records/profiles~placeholder", {
+    id: "placeholder",
+    _table: "profiles",
+    user_id: successor.localId,
+  }),
+  document(targetPath + "/records/facilities~must-preserve", {
+    id: "must-preserve",
+    _table: "facilities",
+    user_id: successor.localId,
+  }),
+]);
+const transferArgs = [
+  "scripts/firebase-transfer-owner.mjs",
+  "--project",
+  project,
+  "--from-admin",
+  email,
+  "--to-owner",
+  successorEmail,
+  "--emulator",
+];
+const rejected = spawnSync(process.execPath, transferArgs, {
+  encoding: "utf8",
+});
+if (rejected.status !== 1)
+  throw Error("Target with existing data must be rejected");
+const getDocument = async (path) =>
+  (
+    await fetch(`http://127.0.0.1:8080/v1/${path}`, {
+      headers: { authorization: "Bearer owner" },
+    })
+  ).json();
+if (
+  (await getDocument(sourcePath)).fields.owner_user_id.stringValue !==
+  user.localId
+)
+  throw Error("Rejected transfer changed source owner");
+await commit([{ delete: targetPath + "/records/facilities~must-preserve" }]);
+const transferred = execFileSync(process.execPath, transferArgs, {
+  encoding: "utf8",
+});
+if (!transferred.includes("Übernahme erfolgreich"))
+  throw Error("Transfer did not finish");
+if (
+  (await getDocument(sourcePath)).fields.owner_user_id.stringValue !==
+  successor.localId
+)
+  throw Error("Wrong successor");
+if (
+  (await getDocument(`${documents}/hf_admins/${user.localId}`)).fields.is_active
+    .booleanValue !== true
+)
+  throw Error("Platform admin access lost");
+if (
+  (await getDocument(sourcePath + `/members/${user.localId}`)).error?.code !==
+  404
+)
+  throw Error("Platform admin remained company member");
+if (
+  (await getDocument(sourcePath + `/members/${successor.localId}`)).fields.role
+    .stringValue !== "owner"
+)
+  throw Error("Successor has no owner membership");
+if (
+  (await getDocument(sourcePath + "/records/facilities~f1")).fields.user_id
+    .stringValue !== successor.localId
+)
+  throw Error("Business record lost or not assigned");
+if (
+  (await getDocument(sourcePath + "/finance/historical-test")).fields
+    .total_price.integerValue !== "28"
+)
+  throw Error("Historic finance changed");
+if ((await getDocument(targetPath)).error?.code !== 404)
+  throw Error("Empty duplicate company retained");
+const repeat = execFileSync(process.execPath, transferArgs, {
+  encoding: "utf8",
+});
+if (!repeat.includes("bereits Geschäftsführer"))
+  throw Error("Transfer not idempotent");
+console.log(
+  "PASS: safe atomic owner transfer, no target data loss, independent admin, preserved financial history and idempotency",
+);

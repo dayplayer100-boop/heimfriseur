@@ -2,6 +2,19 @@ import { PermissionsEditor } from "./TeamPermissions";
 import { BillingEditor } from "./Payments";
 import type { Edit } from "./Records";
 import { useState } from "react";
+import type { TeamMember, AppAdminContext } from "./types";
+function teamRoleLabel(
+  member: TeamMember,
+  appAdmin: AppAdminContext | null | undefined,
+) {
+  return appAdmin?.admins?.some(
+    (a) => a.user_id === member.user_id && a.is_active,
+  )
+    ? "Admin"
+    : member.role === "owner"
+      ? "Geschäftsführer"
+      : "Mitarbeiter";
+}
 import { useStore } from "./store";
 import { Button, Input, Modal, Title, Empty } from "./ui";
 import { euro, minutes, dateLabel, fullName } from "./domain";
@@ -89,17 +102,28 @@ export function TeamSettings() {
           Unternehmensauswertungen, Stammdaten und Preisänderungen bleiben beim
           Geschäftsführer.
         </p>
+        {appAdmin?.is_admin &&
+          !team.members.some((m) => m.user_id === team.membership.user_id) && (
+            <div className="list-row">
+              <div>
+                <strong>Admin</strong>
+                <p>Admin · Plattformzugriff</p>
+              </div>
+            </div>
+          )}
         {team.members.map((m) => (
           <div className="list-row" key={m.id}>
             <div>
               <strong>
                 {m.display_name ||
-                  (m.role === "owner"
-                    ? data.profiles[0]?.first_name || "Geschäftsführer"
-                    : "Mitarbeiter")}
+                  (teamRoleLabel(m, appAdmin) === "Admin"
+                    ? "Admin"
+                    : m.role === "owner"
+                      ? data.profiles[0]?.first_name || "Geschäftsführer"
+                      : "Mitarbeiter")}
               </strong>
               <p>
-                {m.role === "owner" ? "Geschäftsführer" : "Mitarbeiter"} ·{" "}
+                {teamRoleLabel(m, appAdmin)} ·{" "}
                 {m.is_active ? "Aktiv" : "Deaktiviert"}
               </p>
             </div>
@@ -219,8 +243,12 @@ export function TeamSettings() {
             <div className="audit-row" key={e.id}>
               <strong>{actionLabels[e.action] || e.action}</strong>
               <span>
-                {team.members.find((m) => m.user_id === e.actor_id)
-                  ?.display_name || "Geschäftsführer"}{" "}
+                {appAdmin.admins?.some(
+                  (a) => a.user_id === e.actor_id && a.is_active,
+                )
+                  ? "Admin"
+                  : team.members.find((m) => m.user_id === e.actor_id)
+                      ?.display_name || "Unbekannt"}{" "}
                 ·{" "}
                 {new Date(e.created_at).toLocaleString("de-DE", {
                   timeZone: "Europe/Berlin",
@@ -287,7 +315,7 @@ export function AssignmentEditor({
   appointmentId: string;
   onClose: () => void;
 }) {
-  const { team, rpc, run, demo } = useStore();
+  const { team, rpc, run, demo, appAdmin } = useStore();
   const current =
     team?.assignments.filter((a) => a.appointment_id === appointmentId) || [];
   const [users, setUsers] = useState(current.map((a) => a.user_id));
@@ -298,8 +326,8 @@ export function AssignmentEditor({
     <Modal title="Team für diesen Besuch" onClose={onClose}>
       <p>
         Mehrere Personen können gemeinsam arbeiten. Die verantwortliche Person
-        darf den Besuch abschließen. Du als Geschäftsführer kannst ihn jederzeit
-        abschließen.
+        darf den Besuch abschließen. Als Geschäftsführer oder Admin kannst du
+        ihn jederzeit abschließen.
       </p>
       {team?.members
         .filter((m) => m.is_active)
@@ -318,8 +346,7 @@ export function AssignmentEditor({
                   setResponsible("");
               }}
             />
-            {m.display_name ||
-              (m.role === "owner" ? "Geschäftsführer" : "Mitarbeiter")}
+            {m.display_name || teamRoleLabel(m, appAdmin)}
           </label>
         ))}
       <label>
@@ -328,12 +355,12 @@ export function AssignmentEditor({
           value={responsible}
           onChange={(e) => setResponsible(e.target.value)}
         >
-          <option value="">Nur Geschäftsführer</option>
+          <option value="">Geschäftsführer oder Admin</option>
           {team?.members
             .filter((m) => users.includes(m.user_id) && m.is_active)
             .map((m) => (
               <option key={m.id} value={m.user_id}>
-                {m.display_name || "Geschäftsführer"}
+                {m.display_name || teamRoleLabel(m, appAdmin)}
               </option>
             ))}
         </select>

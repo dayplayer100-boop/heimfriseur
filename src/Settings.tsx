@@ -150,7 +150,7 @@ export function Settings({
             </Button>
             <p>
               {appAdmin?.is_admin
-                ? "App-Verwaltung"
+                ? "Admin"
                 : (team?.membership.display_name || "Mein Konto") +
                   " · " +
                   (isOwner ? "Geschäftsführer" : "Mitarbeiter")}

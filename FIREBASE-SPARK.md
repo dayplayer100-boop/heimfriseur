@@ -226,3 +226,13 @@ Dokumentation: [Spark/Blaze](https://firebase.google.com/docs/projects/billing/f
 ### Grenze bei Leistungskombinationen
 
 Die Firebase-Testversion erlaubt maximal vier ausgewählte Leistungen pro laufender Behandlung. Firestore begrenzt die Auswertung der Sicherheitsregeln; größere Kombinationen werden vor dem Speichern verständlich abgewiesen. Bei Bedarf eine kombinierte Leistung (z. B. „Waschen / Schneiden / Föhnen“) in der Preisliste anlegen. Historische Imports bleiben vollständig erhalten. Leistungssnapshots liegen gemeinsam im Behandlungsdokument; Preise bleiben ausschließlich im geschützten Finanzdokument.
+
+## Geschäftsführer übernehmen, App-Admin getrennt behalten
+
+Beide Konten müssen bereits bestätigt sein. In der angemeldeten Cloud Shell:
+
+```bash
+node scripts/firebase-transfer-owner.mjs --project heimfriseur-dayplayer100 --from-admin ADMIN_EMAIL --to-owner CHEF_EMAIL
+```
+
+Der bisherige Firmeninhaber muss bereits geschützter App-Admin sein. Die Übernahme ermittelt die Konto-IDs serverseitig, überträgt bestehende Unternehmens-/Datensatzzuordnungen in einer einzigen Transaktion und entfernt das Admin-Konto aus der Firmenmitgliederliste. Historische Bearbeiter und Finanzwerte bleiben erhalten. Ein automatisch erzeugtes leeres Unternehmen des neuen Geschäftsführers wird bereinigt; bei echten Daten, Kollegen oder Einladungen in dieser zweiten Firma bricht das Werkzeug ab. Laufende Behandlungen zuerst beenden. Große Unternehmen oberhalb der Einzeltransaktionsgrenze werden nicht teilweise übertragen. Eine Wiederholung nach erfolgreicher Übernahme ist ohne weitere Änderungen möglich. Die App zeigt Plattformzugriff als „Admin“ und die tatsächliche Firmenrolle als „Geschäftsführer“.
