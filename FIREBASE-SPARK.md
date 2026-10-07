@@ -128,6 +128,15 @@ Neuladen auf demselben Build. Keine separate APK nötig.
 
 ## App-Admin einrichten
 
+Alternativ in der angemeldeten Google Cloud Shell gezielt ausführen:
+
+```bash
+node scripts/firebase-grant-admin.mjs --email ADMIN_EMAIL --project heimfriseur-dayplayer100
+```
+
+`ADMIN_EMAIL` durch die bereits bestätigte Firebase-Konto-Adresse ersetzen. Der Befehl ermittelt die UID serverseitig, lehnt unbestätigte/deaktivierte Konten ab und schreibt Admin-Registrierung und Betreiberprotokoll gemeinsam. Er verwendet den vorhandenen Cloud-Shell-IAM-Zugang, keine privaten Schlüssel. Geschäftsdaten und Teamzuordnungen werden nicht verändert. Anschließend ab-/anmelden. Das Werkzeug gewährt ausschließlich Plattformrechte; es macht Mitarbeiter nicht zu Geschäftsführern anderer Firmen.
+
+
 Erst das Admin-Konto in der Testversion registrieren und bestätigen. Unter Firebase
 Authentication → Nutzer dessen **Firebase-UID** kopieren. In Firestore ein Dokument
 `hf_admins/FIREBASE_UID` mit `is_active` als Boolean `true` und `email` als String

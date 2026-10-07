@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { build } from "esbuild";
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -128,3 +128,48 @@ rmSync(temporary, { recursive: true, force: true });
 console.log(
   "PASS: fictitious migration, full record comparison and historical finance preserved",
 );
+
+const grantArgs = [
+  "scripts/firebase-grant-admin.mjs",
+  "--email",
+  email,
+  "--project",
+  project,
+  "--emulator",
+];
+const granted = execFileSync(process.execPath, grantArgs, { encoding: "utf8" });
+if (!granted.includes("erfolgreich eingerichtet"))
+  throw Error("Operator grant failed");
+const again = execFileSync(process.execPath, grantArgs, { encoding: "utf8" });
+if (!again.includes("bereits aktiver App-Admin"))
+  throw Error("Operator grant is not idempotent");
+console.log(
+  "PASS: verified UID-based operator admin grant, audit commit and idempotency",
+);
+
+const unverifiedEmail = `unverified-admin-${Date.now()}@test.invalid`;
+const unverified = await api(auth + "/accounts:signUp?key=demo-key", {
+  email: unverifiedEmail,
+  password: "UnverifiedTestOnly-123!",
+  returnSecureToken: true,
+});
+const denied = spawnSync(
+  process.execPath,
+  [
+    "scripts/firebase-grant-admin.mjs",
+    "--email",
+    unverifiedEmail,
+    "--project",
+    project,
+    "--emulator",
+  ],
+  { encoding: "utf8" },
+);
+if (denied.status !== 1) throw Error("Unverified operator grant must fail");
+const absent = await fetch(
+  `http://127.0.0.1:8080/v1/projects/${project}/databases/(default)/documents/hf_admins/${unverified.localId}`,
+  { headers: { authorization: "Bearer owner" } },
+);
+if (absent.status !== 404)
+  throw Error("Unverified account unexpectedly became admin");
+console.log("PASS: unverified admin grants rejected without database changes");
