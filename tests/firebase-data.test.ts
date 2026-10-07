@@ -1,6 +1,10 @@
 import { describe, it, expect } from "vitest";
 import { demoSeed } from "../src/demo";
-import { splitFirebaseData, joinFirebaseData } from "../src/firebaseData";
+import {
+  splitFirebaseData,
+  joinFirebaseData,
+  sameFirebaseDocument,
+} from "../src/firebaseData";
 import { emptyData, type Data } from "../src/types";
 
 describe("Firebase data preservation and financial separation", () => {
@@ -109,5 +113,32 @@ describe("Firebase data preservation and financial separation", () => {
     expect(employee.treatment_services[0].service_name_snapshot).toBe(
       "Historischer Leistungsname",
     );
+  });
+});
+
+describe("Firestore concurrent document checks", () => {
+  it("accepts reordered map keys while detecting actual changes and ordered arrays", () => {
+    const a = {
+      email: "invite@test.invalid",
+      business_id: "company",
+      revoked_at: null,
+      permissions: { edit_schedule: false, record_payments: true },
+      facility_ids: ["one", "two"],
+    };
+    const b = {
+      facility_ids: ["one", "two"],
+      permissions: { record_payments: true, edit_schedule: false },
+      revoked_at: null,
+      business_id: "company",
+      email: "invite@test.invalid",
+    };
+    expect(sameFirebaseDocument(a, b)).toBe(true);
+    expect(
+      sameFirebaseDocument(a, { ...b, revoked_at: "2026-10-07T08:00:00Z" }),
+    ).toBe(false);
+    expect(
+      sameFirebaseDocument(a, { ...b, facility_ids: ["two", "one"] }),
+    ).toBe(false);
+    expect(sameFirebaseDocument(a, undefined)).toBe(false);
   });
 });

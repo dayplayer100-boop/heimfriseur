@@ -3,7 +3,12 @@ import {
   initializeTestEnvironment,
   type RulesTestEnvironment,
 } from "@firebase/rules-unit-testing";
-import { doc, setDoc, writeBatch, type Firestore } from "firebase/firestore";
+import {
+  doc,
+  setDoc,
+  writeBatch,
+  type Firestore,
+} from "firebase/firestore";
 import { readFileSync } from "node:fs";
 import type { FirebaseRepository } from "../src/firebaseRepository";
 let env: RulesTestEnvironment,
@@ -91,6 +96,20 @@ suite("Firebase Spark real transaction workflows", () => {
   }, 20000);
   afterAll(async () => env?.cleanup());
   it("creates data, assigns a visit, treats and skips customers, closes recurrence and preserves snapshots", async () => {
+    const invitation = await owner.mutate("create_team_invite", {
+      p_email: "new-worker@test.invalid",
+    });
+    expect(invitation.token).toBeTruthy();
+    let invitationState = await owner.snapshot();
+    const inviteId = invitationState.team.invitations.find(
+      (i) => i.email === "new-worker@test.invalid",
+    )!.id;
+    await owner.mutate("revoke_team_invite", { p_invite: inviteId });
+    invitationState = await owner.snapshot();
+    expect(
+      invitationState.team.invitations.find((i) => i.id === inviteId)
+        ?.revoked_at,
+    ).toBeTruthy();
     const facility = await owner.mutate("save", {
       table: "facilities",
       row: { name: "Testheim" },

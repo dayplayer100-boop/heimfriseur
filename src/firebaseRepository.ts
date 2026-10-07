@@ -3,6 +3,7 @@ import {
   joinFirebaseData,
   assertFirebaseData,
   firebaseRecordId,
+  sameFirebaseDocument,
 } from "./firebaseData";
 import {
   collection,
@@ -632,7 +633,7 @@ export class FirebaseRepository {
         throw Error("Daten wurden parallel geändert. Bitte erneut versuchen.");
       for (const [path, expected] of extraRead) {
         const current = await tx.get(doc(this.db, path));
-        if (JSON.stringify(current.data()) !== JSON.stringify(expected))
+        if (!sameFirebaseDocument(current.data(), expected))
           throw Error(
             "Teamzuordnung wurde parallel geändert. Bitte erneut laden.",
           );

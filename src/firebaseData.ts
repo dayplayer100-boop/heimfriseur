@@ -190,3 +190,19 @@ export function assertFirebaseData(data: Data) {
     )
       throw Error("Behandlungsleistung nicht gefunden.");
 }
+
+// Firestore reads may return map fields in a different insertion order. Compare
+// values recursively; array order remains meaningful for assignments/services.
+export function sameFirebaseDocument(a: unknown, b: unknown): boolean {
+  const canonical = (value: any): any =>
+    Array.isArray(value)
+      ? value.map(canonical)
+      : value && typeof value === "object"
+        ? Object.fromEntries(
+            Object.keys(value)
+              .sort()
+              .map((key) => [key, canonical(value[key])]),
+          )
+        : value;
+  return JSON.stringify(canonical(a)) === JSON.stringify(canonical(b));
+}
