@@ -231,5 +231,36 @@ suite("Firebase Spark real transaction workflows", () => {
       p_active: false,
     });
     await expect(worker.snapshot()).rejects.toBeTruthy();
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), "hf_admins", "platform-admin"), {
+        is_active: true,
+      });
+    });
+    const adminDb = (
+      env
+        .authenticatedContext("platform-admin", {
+          email: "admin@test.invalid",
+          email_verified: true,
+        })
+        .firestore() as unknown as { _delegate: Firestore }
+    )._delegate;
+    const module = await import("../src/firebaseRepository");
+    const platform = new module.FirebaseRepository(
+      adminDb,
+      "platform-admin",
+      "owner",
+    );
+    const administrative = await platform.snapshot();
+    expect(administrative.data.treatments[0].total_price).toBe(31);
+    expect(
+      administrative.team.members.some((m) => m.user_id === "platform-admin"),
+    ).toBe(false);
+    await platform.mutate("save", {
+      table: "facilities",
+      row: { id: facility, name: "Vom App-Admin bearbeitet" },
+    });
+    expect((await owner.snapshot()).data.facilities[0].name).toBe(
+      "Vom App-Admin bearbeitet",
+    );
   }, 60000);
 });

@@ -84,7 +84,7 @@ export function joinFirebaseData(records: Json[], finances: Json[]): Data {
     }
   for (const t of data.treatments) {
     const snapshots = (t as unknown as Json).service_snapshots || [];
-    data.treatment_services.push(...snapshots);
+    data.treatment_services.push(...clean(snapshots));
     delete (t as unknown as Json).service_snapshots;
     const fin = finances.find((f) => f.treatment_id === t.id);
     Object.assign(t, {

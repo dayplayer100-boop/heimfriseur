@@ -2,7 +2,7 @@
 
 Dieser Branch `firebase-spark` enthält die parallele Firebase-Version: Firebase Auth (E-Mail/Google) und Firestore mit getrennten Finanzdaten und Unternehmensrechten. Kein Zahlungskonto, keine Cloud Functions. Die Supabase-Version und die bestehende Hosting-Adresse bleiben erhalten.
 
-**Einrichtung und Grenzen:** [FIREBASE-SPARK.md](FIREBASE-SPARK.md). `npm ci`, `npm run build:firebase`; Ausgabe `dist-firebase`. Normales `npm run build` baut weiterhin die Supabase-Version nach `dist`. Die Firebase-Konfiguration ist öffentlich; keine privaten Schlüssel im Browser verwenden. Die Testversion ist noch nicht als Produktionsersatz freigegeben; echte Anmeldung, Google und Datenübertragung müssen in der eigenen Firebase-Konsole geprüft werden.
+**Einrichtung und Grenzen:** [FIREBASE-SPARK.md](FIREBASE-SPARK.md). **Prüfung auf Funktions-/Datenverlust:** [ERHALT-PRUEFUNG.md](ERHALT-PRUEFUNG.md). `npm ci`, `npm run build:firebase`; Ausgabe `dist-firebase`. Normales `npm run build` baut weiterhin die Supabase-Version nach `dist`. Die Firebase-Konfiguration ist öffentlich; keine privaten Schlüssel im Browser verwenden. Die Testversion ist noch nicht als Produktionsersatz freigegeben; echte Anmeldung, Google und Datenübertragung müssen in der eigenen Firebase-Konsole geprüft werden.
 
 ## Anmeldung und Sicherheit 6.1.0
 

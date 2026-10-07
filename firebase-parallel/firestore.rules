@@ -5,7 +5,7 @@ service cloud.firestore {
     function admin() { return signed() && exists(/databases/$(database)/documents/hf_admins/$(request.auth.uid)) && get(/databases/$(database)/documents/hf_admins/$(request.auth.uid)).data.is_active == true; }
     function owner(b) { return signed() && (exists(/databases/$(database)/documents/hf_businesses/$(b)) ? (get(/databases/$(database)/documents/hf_businesses/$(b)).data.get('_migration_state','complete') != 'in_progress' && (get(/databases/$(database)/documents/hf_businesses/$(b)).data.owner_user_id == request.auth.uid || admin())) : false); }
     function member(b) { return get(/databases/$(database)/documents/hf_businesses/$(b)/members/$(request.auth.uid)).data; }
-    function active(b) { return signed() && get(/databases/$(database)/documents/hf_businesses/$(b)).data.get('_migration_state','complete') != 'in_progress' && member(b).is_active == true; }
+    function active(b) { return signed() && get(/databases/$(database)/documents/hf_businesses/$(b)).data.get('_migration_state','complete') != 'in_progress' && (exists(/databases/$(database)/documents/hf_businesses/$(b)/members/$(request.auth.uid)) ? member(b).is_active == true : admin()); }
     function permission(b, key) { return signed() && get(/databases/$(database)/documents/hf_businesses/$(b)).data.get('_migration_state','complete') != 'in_progress' && member(b).is_active == true && (member(b).role == 'owner' || member(b).permissions.get(key, key in ['record_payments','close_visits']) == true); }
     function scope(b, facility) { return facility != '' && facility in member(b).get('facility_ids', []); }
     function rec(b,t,id) { return get(/databases/$(database)/documents/hf_businesses/$(b)/records/$(t + '~' + id)).data; }

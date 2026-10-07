@@ -1,5 +1,7 @@
 import { chromium } from "playwright";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+const version = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
 const browser = await chromium.launch({
   headless: true,
   ...(process.env.CHROMIUM_PATH
@@ -9,7 +11,7 @@ const browser = await chromium.launch({
 });
 const base = process.env.APP_URL || "http://localhost:4173",
   meta = await (await fetch(base + "/version.json")).json();
-assert.equal(meta.version, "6.1.0");
+assert.equal(meta.version, version);
 assert.ok(meta.buildId.startsWith(meta.version + "-"));
 const page = await browser.newPage({ viewport: { width: 390, height: 844 } }),
   errors = [];
@@ -30,7 +32,7 @@ try {
     .getByRole("button", { name: "Auf Updates prüfen", exact: true })
     .click();
   await page
-    .getByText("Website und App sind auf der aktuellen Version 6.1.0", {
+    .getByText(`Website und App sind auf der aktuellen Version ${version}`, {
       exact: true,
     })
     .waitFor();
@@ -67,7 +69,7 @@ try {
       (t) => !t.end_time && t.material_cost === 3.5,
     ),
   );
-  available = { version: "6.1.0", buildId: "6.1.0-test-deployment" };
+  available = { version, buildId: `${version}-test-deployment` };
   await page
     .getByRole("button", { name: "Auf Updates prüfen", exact: true })
     .click();
