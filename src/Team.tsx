@@ -11,10 +11,12 @@ function teamRoleLabel(
   return appAdmin?.admins?.some(
     (a) => a.user_id === member.user_id && a.is_active,
   )
-    ? "Admin"
-    : member.role === "owner"
-      ? "Geschäftsführer"
-      : "Mitarbeiter";
+    ? "App-Admin"
+    : (member.permissions as Record<string, boolean>)?.company_admin
+      ? "Administrator"
+      : member.role === "owner"
+        ? "Geschäftsführer"
+        : "Mitarbeiter";
 }
 import { useStore } from "./store";
 import { Button, Input, Modal, Title, Empty } from "./ui";
@@ -42,12 +44,13 @@ export function TeamInvite() {
     <section className="panel settings-panel">
       <Title
         title="Dem Team beitreten"
-        description="Dein Mitarbeiterzugang wird mit deiner bestätigten E-Mail-Adresse verbunden."
+        description="Dein Teamzugang wird mit deiner bestätigten E-Mail-Adresse verbunden."
       />
       <p>
         Angemeldet als {user?.email}. Du erhältst Zugriff auf die dir
-        zugewiesenen Besuche. Ein bestehendes Unternehmenskonto kann nicht als
-        Mitarbeiterkonto verwendet werden.
+        zugewiesenen Daten entsprechend deiner eingeladenen Rolle. Ein Konto aus
+        einem anderen Unternehmen muss zuerst durch den App-Admin zugeordnet
+        werden.
       </p>
       <form
         onSubmit={async (e) => {
@@ -86,7 +89,13 @@ export function TeamInvite() {
   );
 }
 export function TeamSettings() {
-  const { team, demo, rpc, run, setNotify, data, appAdmin } = useStore();
+  const { team, demo, rpc, run, setNotify, data, appAdmin, user, busy } =
+    useStore();
+  const [inviteRole, setInviteRole] = useState("employee");
+  const [roleChange, setRoleChange] = useState<{
+    member: TeamMember;
+    role: string;
+  } | null>(null);
   const [permissionMember, setPermissionMember] = useState<string | null>(null);
   const [email, setEmail] = useState(""),
     [inviteLinks, setInviteLinks] = useState<Record<string, string>>({}),
@@ -98,10 +107,11 @@ export function TeamSettings() {
       <section className="panel">
         <h2>Dein Team</h2>
         <p>
-          Geschäftsführer verwalten das Unternehmen. Mitarbeiter bearbeiten
-          zugewiesene Besuche und ihre eigenen Behandlungen.
-          Unternehmensauswertungen, Stammdaten und Preisänderungen bleiben beim
-          Geschäftsführer.
+          Geschäftsführer und Unternehmens-Administratoren verwalten das
+          Unternehmen. Mitarbeiter bearbeiten zugewiesene Besuche und ihre
+          eigenen Behandlungen. Unternehmensauswertungen, Stammdaten und
+          Preisänderungen bleiben bei der Geschäftsführung und den
+          Administratoren.
         </p>
         {appAdmin?.is_admin &&
           !team.members.some((m) => m.user_id === team.membership.user_id) && (
@@ -116,11 +126,14 @@ export function TeamSettings() {
           <div className="list-row" key={m.id}>
             <div>
               <strong>
-                {(teamRoleLabel(m, appAdmin) === "Admin" &&
-                m.display_name === "Geschäftsführer"
+                {(["Administrator", "App-Admin"].includes(
+                  teamRoleLabel(m, appAdmin),
+                ) && m.display_name === "Geschäftsführer"
                   ? "Admin"
                   : m.display_name) ||
-                  (teamRoleLabel(m, appAdmin) === "Admin"
+                  (["Administrator", "App-Admin"].includes(
+                    teamRoleLabel(m, appAdmin),
+                  )
                     ? "Admin"
                     : m.role === "owner"
                       ? data.profiles[0]?.first_name || "Geschäftsführer"
@@ -131,24 +144,54 @@ export function TeamSettings() {
                 {m.is_active ? "Aktiv" : "Deaktiviert"}
               </p>
             </div>
-            {m.role === "employee" && (
-              <div className="button-group">
-                <Button
-                  variant="secondary"
-                  onClick={() => setPermissionMember(m.id)}
+            {firebaseEnabled && (
+              <label>
+                Rolle für {m.display_name || "Teammitglied"}
+                <select
+                  aria-label={`Rolle für ${m.display_name || "Teammitglied"}`}
+                  value={
+                    m.role === "owner"
+                      ? "owner"
+                      : (m.permissions as Record<string, boolean>)
+                            ?.company_admin
+                        ? "admin"
+                        : "employee"
+                  }
+                  disabled={busy || m.user_id === user?.id || demo}
+                  onChange={(e) =>
+                    setRoleChange({ member: m, role: e.target.value })
+                  }
                 >
-                  Berechtigungen
-                </Button>
-                <Button variant="secondary" onClick={() => setConfirm(m.id)}>
-                  {m.is_active ? "Zugang deaktivieren" : "Aktivieren"}
-                </Button>
-              </div>
+                  <option value="employee">Mitarbeiter</option>
+                  <option value="admin">Administrator</option>
+                  <option value="owner">Geschäftsführer</option>
+                </select>
+              </label>
             )}
+            {m.role === "employee" &&
+              !(
+                firebaseEnabled &&
+                (m.permissions as Record<string, boolean>)?.company_admin
+              ) && (
+                <div className="button-group">
+                  <Button
+                    variant="secondary"
+                    onClick={() => setPermissionMember(m.id)}
+                  >
+                    Berechtigungen
+                  </Button>
+                  <Button variant="secondary" onClick={() => setConfirm(m.id)}>
+                    {m.is_active ? "Zugang deaktivieren" : "Aktivieren"}
+                  </Button>
+                </div>
+              )}
           </div>
         ))}
       </section>
       <section className="panel">
-        <h2>Mitarbeiter einladen</h2>
+        <h2>
+          {firebaseEnabled ? "Teammitglied einladen" : "Mitarbeiter einladen"}
+        </h2>
         <p>
           Der Link ist sieben Tage gültig und an diese E-Mail-Adresse gebunden.
           Kopiere ihn und sende ihn selbst an den Mitarbeiter.
@@ -163,7 +206,10 @@ export function TeamSettings() {
             onSubmit={async (e) => {
               e.preventDefault();
               const result = await run(() =>
-                rpc("create_team_invite", { p_email: email }),
+                rpc("create_team_invite", {
+                  p_email: email,
+                  ...(firebaseEnabled ? { p_role: inviteRole } : {}),
+                }),
               );
               if (result) {
                 setInviteLinks((previous) => ({
@@ -184,6 +230,20 @@ export function TeamSettings() {
               value={email}
               onChange={setEmail}
             />
+            {firebaseEnabled && (
+              <label>
+                Rolle der eingeladenen Person
+                <select
+                  value={inviteRole}
+                  onChange={(e) => setInviteRole(e.target.value)}
+                >
+                  <option value="employee">Mitarbeiter</option>
+                  <option value="admin">
+                    Administrator · volle Unternehmensrechte
+                  </option>
+                </select>
+              </label>
+            )}
             <Button type="submit">Einladungslink erstellen</Button>
           </form>
         )}
@@ -307,6 +367,45 @@ export function TeamSettings() {
             <p className="muted">Noch keine Teamänderungen.</p>
           )}
         </section>
+      )}
+      {roleChange && (
+        <Modal title="Rolle ändern" onClose={() => setRoleChange(null)}>
+          <p>
+            {roleChange.member.display_name} erhält die Rolle{" "}
+            {roleChange.role === "owner"
+              ? "Geschäftsführer"
+              : roleChange.role === "admin"
+                ? "Administrator"
+                : "Mitarbeiter"}
+            .
+          </p>
+          {roleChange.role === "owner" && (
+            <p>
+              Die bisherige Geschäftsführung erhält Administratorrechte. Das
+              Unternehmen und seine gespeicherten Daten bleiben erhalten.
+            </p>
+          )}
+          {roleChange.role === "admin" && (
+            <p>
+              Administratoren können alle Daten und Teamrollen dieses
+              Unternehmens bearbeiten.
+            </p>
+          )}
+          <Button
+            onClick={() =>
+              void run(async () => {
+                await rpc("set_company_role", {
+                  p_member: roleChange.member.user_id,
+                  p_role: roleChange.role,
+                });
+                setRoleChange(null);
+                setNotify("Rolle gespeichert");
+              })
+            }
+          >
+            Änderung bestätigen
+          </Button>
+        </Modal>
       )}
       {permissionMember && (
         <PermissionsEditor

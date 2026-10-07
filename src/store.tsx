@@ -296,10 +296,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             admin.data?.is_admin &&
             sessionStorage.getItem("heimfriseur-invite")
           ) {
-            sessionStorage.removeItem("heimfriseur-invite");
-            setNotify(
-              "Du bist als App-Admin angemeldet. Die Mitarbeitereinladung wurde verlassen.",
-            );
+            if (!firebaseEnabled) {
+              sessionStorage.removeItem("heimfriseur-invite");
+              setNotify(
+                "Du bist als App-Admin angemeldet. Die Mitarbeitereinladung wurde verlassen.",
+              );
+            } else {
+              const invitation = await backendRpc("usable_team_invite", {
+                p_token: sessionStorage.getItem("heimfriseur-invite"),
+              });
+              if (!invitation.error && !invitation.data)
+                sessionStorage.removeItem("heimfriseur-invite");
+            }
           }
           if (!sessionStorage.getItem("heimfriseur-invite")) {
             if (!admin.data?.is_admin) {

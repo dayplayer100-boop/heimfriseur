@@ -156,6 +156,7 @@ try {
   await page.getByRole("button", { name: "Team", exact: true }).click();
   const inviteEmail = `invited-${Date.now()}@test.invalid`;
   await page.getByLabel("E-Mail des Mitarbeiters").fill(inviteEmail);
+  await page.getByLabel("Rolle der eingeladenen Person").selectOption("admin");
   await page
     .getByRole("button", { name: "Einladungslink erstellen", exact: true })
     .click();
@@ -178,6 +179,53 @@ try {
     await page.locator("body").evaluate((b) => b.scrollWidth > innerWidth + 1)
   )
     throw Error("Invitation mobile horizontal overflow");
+  // Exercise the actual team role controls as a director without platform privileges.
+  await seed("hf_users/company-worker", {
+    uid: { stringValue: "company-worker" },
+    email: { stringValue: "company-worker@test.invalid" },
+    display_name: { stringValue: "Team Test" },
+    updated_at: { stringValue: new Date().toISOString() },
+  });
+  await seed("hf_accounts/company-worker", {
+    business_id: { stringValue: session.uid },
+  });
+  await seed(`hf_businesses/${session.uid}/members/company-worker`, {
+    id: { stringValue: "company-worker" },
+    user_id: { stringValue: "company-worker" },
+    business_id: { stringValue: session.uid },
+    role: { stringValue: "employee" },
+    display_name: { stringValue: "Team Test" },
+    is_active: { booleanValue: true },
+    facility_ids: { arrayValue: { values: [] } },
+    permissions: { mapValue: { fields: {} } },
+  });
+  await seed(`hf_admins/${session.uid}`, {
+    email: { stringValue: email },
+    is_active: { booleanValue: false },
+  });
+  await page.reload();
+  await page.getByRole("button", { name: "Team", exact: true }).click();
+  await page
+    .getByLabel("Rolle für Team Test", { exact: true })
+    .selectOption("admin");
+  await page
+    .getByRole("button", { name: "Änderung bestätigen", exact: true })
+    .click();
+  await page.getByText("Rolle gespeichert", { exact: true }).waitFor();
+  const changed = await (
+    await fetch(
+      `http://127.0.0.1:8080/v1/projects/demo-heimfriseur/databases/(default)/documents/hf_businesses/${session.uid}/members/company-worker`,
+      { headers: { authorization: "Bearer owner" } },
+    )
+  ).json();
+  if (!changed.fields.permissions.mapValue.fields.company_admin.booleanValue)
+    throw Error("Director role control did not save company admin");
+  await seed(`hf_admins/${session.uid}`, {
+    email: { stringValue: email },
+    is_active: { booleanValue: true },
+  });
+  await page.reload();
+  await page.getByRole("button", { name: "Team", exact: true }).click();
   await page.screenshot({
     path: "/tmp/heim-firebase-invites.png",
     fullPage: true,

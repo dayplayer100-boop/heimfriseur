@@ -453,6 +453,83 @@ suite("Firebase Spark real transaction workflows", () => {
     expect(
       (await getDocs(collection(adminDb, "hf_admin_audit"))).size,
     ).toBeGreaterThanOrEqual(3);
+    // The director manages scoped admins without granting platform access.
+    await setDoc(doc(invitedDb, "hf_users", "invited-user"), {
+      uid: "invited-user",
+      email: "invite@test.invalid",
+      display_name: "Neu",
+      updated_at: new Date().toISOString(),
+    });
+    await changeFirebaseBusinessRole(
+      workerDb,
+      "employee",
+      "invited-user",
+      "owner",
+      "admin",
+      true,
+    );
+    const companyAdmin = new module.FirebaseRepository(
+      invitedDb,
+      "invited-user",
+      "owner",
+    );
+    expect((await companyAdmin.snapshot()).team.membership.role).toBe("owner");
+    expect((await companyAdmin.snapshot()).data.treatments[0].total_price).toBe(
+      31,
+    );
+    await companyAdmin.mutate("save", {
+      table: "facilities",
+      row: { id: facility, name: "Unternehmensadmin" },
+    });
+    await expect(
+      changeFirebaseAdmin(invitedDb, "invited-user", workerEmail, true),
+    ).rejects.toBeTruthy();
+    await changeFirebaseBusinessRole(
+      workerDb,
+      "employee",
+      "invited-user",
+      "owner",
+      "employee",
+      true,
+    );
+    await expect(
+      getDoc(
+        doc(
+          invitedDb,
+          "hf_businesses",
+          "owner",
+          "finance",
+          all.data.treatments[0].id,
+        ),
+      ),
+    ).rejects.toBeTruthy();
+    const adminInvitation = await platform.mutate("create_team_invite", {
+      p_email: "invite@test.invalid",
+      p_role: "admin",
+    });
+    await acceptFirebaseInvite(
+      invitedDb,
+      "invited-user",
+      "invite@test.invalid",
+      "Neu",
+      adminInvitation.token,
+    );
+    expect((await companyAdmin.snapshot()).team.membership.role).toBe("owner");
+    await changeFirebaseBusinessRole(
+      workerDb,
+      "employee",
+      "invited-user",
+      "owner",
+      "owner",
+      true,
+    );
+    expect(
+      (await getDoc(doc(adminDb, "hf_businesses", "owner"))).data()
+        ?.owner_user_id,
+    ).toBe("invited-user");
+    expect((await companyAdmin.snapshot()).data.treatments[0].total_price).toBe(
+      31,
+    );
     await env.withSecurityRulesDisabled(async (ctx) => {
       await setDoc(doc(ctx.firestore(), "hf_businesses", "archived"), {
         owner_user_id: "owner",

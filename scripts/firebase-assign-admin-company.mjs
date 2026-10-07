@@ -1,5 +1,8 @@
 // Operator-only: assign a platform admin to the existing director company, without company membership.
 import { execFileSync } from "node:child_process";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 const args = process.argv.slice(2);
 const option = (key) =>
@@ -155,6 +158,64 @@ try {
       "Die Geschäftsführung ist nicht aktiv. Keine Änderung vorgenommen.",
     );
   const writes = [];
+  const deleteExtra = args.includes("--delete-extra-company");
+  async function purge(source) {
+    const path = source.name.slice(documents.length + 1);
+    const collections = await request(
+      base + source.name + ":listCollectionIds",
+      {},
+    );
+    if (collections.nextPageToken)
+      throw Error("Zu viele Sammlungen. Keine Änderung vorgenommen.");
+    const saved = [source];
+    for (const id of collections.collectionIds || [])
+      saved.push(...(await all(path + "/" + id)));
+    const memberDocs = saved.filter((d) =>
+      d.name.startsWith(source.name + "/members/"),
+    );
+    if (
+      memberDocs.some(
+        (d) => row(d).user_id !== oldUid && row(d).is_active !== false,
+      )
+    )
+      throw Error(
+        "Die zusätzliche Firma hat aktive Teammitglieder. Keine Änderung vorgenommen.",
+      );
+    for (const colleague of memberDocs.filter(
+      (d) => row(d).user_id !== oldUid,
+    )) {
+      const account = await get(`hf_accounts/${row(colleague).user_id}`);
+      if (row(account)?.business_id === path.split("/").at(-1))
+        saved.push(account);
+    }
+    const invites = await request(base + documents + ":runQuery", {
+      structuredQuery: {
+        from: [{ collectionId: "hf_invites" }],
+        where: {
+          fieldFilter: {
+            field: { fieldPath: "business_id" },
+            op: "EQUAL",
+            value: { stringValue: path.split("/").at(-1) },
+          },
+        },
+      },
+    });
+    saved.push(...invites.filter((r) => r.document).map((r) => r.document));
+    if (saved.length + writes.length > 320)
+      throw Error(
+        "Zu viele Daten für das sichere Löschen. Keine Änderung vorgenommen.",
+      );
+    const directory = join(homedir(), ".heimfriseur-backups");
+    mkdirSync(directory, { recursive: true, mode: 0o700 });
+    const file = join(directory, `company-${Date.now()}-${randomUUID()}.json`);
+    writeFileSync(
+      file,
+      JSON.stringify({ project, documents: saved }, null, 2),
+      { mode: 0o600 },
+    );
+    for (const entry of saved) remove(entry);
+    console.log("Sicherung der zusätzlichen Firma gespeichert:", file);
+  }
   function put(path, data, old, fields) {
     writes.push({
       update: {
@@ -188,7 +249,11 @@ try {
           "Das Admin-Konto gehört zu einer anderen aktiven Firma. Keine Änderung vorgenommen.",
         );
       const members = await all(sourcePath + "/members");
-      if (members.some((d) => row(d).user_id !== oldUid))
+      if (
+        members.some(
+          (d) => row(d).user_id !== oldUid && row(d).is_active !== false,
+        )
+      )
         throw Error(
           "Die zusätzliche Firma hat weitere Teammitglieder. Keine Änderung vorgenommen; die Zuordnung muss geprüft werden.",
         );
@@ -206,40 +271,62 @@ try {
         throw Error(
           "Bitte zuerst laufende Behandlungen in der zusätzlichen Firma beenden. Keine Änderung vorgenommen.",
         );
-      // Do not erase or merge customer/financial history. Retire only the extra
-      // admin-owned company; all its nested records remain recoverable by IAM.
-      for (const d of [...records, ...finance])
-        writes.push({
-          verify: d.name,
-          currentDocument: { updateTime: d.updateTime },
-        });
-      const now = new Date().toISOString();
-      put(
-        sourcePath,
-        {
-          _archived: true,
-          archived_at: now,
-          previous_owner_user_id: oldUid,
-          owner_user_id: null,
-          owner_email: "",
-        },
-        source,
-        [
-          "_archived",
-          "archived_at",
-          "previous_owner_user_id",
-          "owner_user_id",
-          "owner_email",
-        ],
-      );
-      put(
-        sourcePath + "/state/revision",
-        { value: row(revision).value + 1 },
-        revision,
-      );
-      remove(members.find((d) => row(d).user_id === oldUid));
+      if (deleteExtra) {
+        await purge(source);
+      } else {
+        // Do not erase or merge customer/financial history. Retire only the extra
+        // admin-owned company; all its nested records remain recoverable by IAM.
+        for (const d of [...records, ...finance])
+          writes.push({
+            verify: d.name,
+            currentDocument: { updateTime: d.updateTime },
+          });
+        const now = new Date().toISOString();
+        put(
+          sourcePath,
+          {
+            _archived: true,
+            archived_at: now,
+            previous_owner_user_id: oldUid,
+            owner_user_id: null,
+            owner_email: "",
+          },
+          source,
+          [
+            "_archived",
+            "archived_at",
+            "previous_owner_user_id",
+            "owner_user_id",
+            "owner_email",
+          ],
+        );
+        put(
+          sourcePath + "/state/revision",
+          { value: row(revision).value + 1 },
+          revision,
+        );
+        remove(members.find((d) => row(d).user_id === oldUid));
+      }
       archived = true;
     }
+  }
+  if (deleteExtra) {
+    const leftovers = await request(base + documents + ":runQuery", {
+      structuredQuery: {
+        from: [{ collectionId: "hf_businesses" }],
+        where: {
+          fieldFilter: {
+            field: { fieldPath: "previous_owner_user_id" },
+            op: "EQUAL",
+            value: { stringValue: oldUid },
+          },
+        },
+      },
+    });
+    for (const entry of leftovers.filter(
+      (r) => r.document && row(r.document)._archived,
+    ))
+      await purge(entry.document);
   }
   const adminMember = await get(targetPath + `/members/${oldUid}`);
   const revision = await get(targetPath + "/state/revision");
@@ -248,7 +335,8 @@ try {
   if (
     row(registry)?.default_business_id === targetId &&
     sourceId === targetId &&
-    !adminMember
+    !adminMember &&
+    writes.length === 0
   ) {
     console.log(
       `${from} ist bereits ausschließlich App-Admin für das Unternehmen von ${to}.`,
@@ -310,7 +398,9 @@ try {
   );
   if (archived)
     console.log(
-      "Die zusätzliche Admin-Firma wurde stillgelegt. Ihre Datensätze bleiben als Sicherung erhalten und erscheinen nicht mehr als aktives Unternehmen.",
+      deleteExtra
+        ? "Die zusätzliche Admin-Firma wurde nach Sicherung vollständig gelöscht."
+        : "Die zusätzliche Admin-Firma wurde stillgelegt. Ihre Datensätze bleiben als Sicherung erhalten und erscheinen nicht mehr als aktives Unternehmen.",
     );
 } catch (error) {
   console.error(

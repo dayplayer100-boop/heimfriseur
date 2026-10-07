@@ -1,4 +1,7 @@
-import { acceptFirebaseInvite } from "./firebaseInvitations";
+import {
+  acceptFirebaseInvite,
+  usableFirebaseInvite,
+} from "./firebaseInvitations";
 import { defaultServices } from "./defaultServices";
 import {
   changeFirebaseAdmin,
@@ -102,17 +105,22 @@ export class FirebaseRepository {
       throw Error(
         "Die Datenübertragung läuft noch. Bitte den Betreiber informieren und später erneut versuchen.",
       );
-    const member = admin.data()?.is_active
-      ? {
-          id: this.uid,
-          user_id: this.uid,
-          business_id: this.businessId,
-          role: "owner",
-          display_name: "App-Admin",
-          is_active: true,
-          _synthetic: true,
-        }
-      : m.data();
+    const member =
+      admin.data()?.is_active ||
+      (m.data()?.is_active && m.data()?.permissions?.company_admin)
+        ? {
+            id: this.uid,
+            user_id: this.uid,
+            business_id: this.businessId,
+            role: "owner",
+            display_name: admin.data()?.is_active
+              ? "App-Admin"
+              : m.data()?.display_name || "Administrator",
+            permissions: m.data()?.permissions || {},
+            is_active: true,
+            _synthetic: true,
+          }
+        : m.data();
     if (!member?.is_active)
       throw {
         code: "42501",
@@ -431,7 +439,13 @@ export class FirebaseRepository {
       ["set_member_permissions", "set_member_active"].includes(action)
     ) {
       const member = team.members.find((m) => m.id === p.p_member);
-      if (!owner || !member || member.role === "owner") throw { code: "42501" };
+      if (
+        !owner ||
+        !member ||
+        member.role === "owner" ||
+        member.user_id === this.uid
+      )
+        throw { code: "42501" };
       await extraSet(this.memberRef(member.user_id), {
         ...member,
         ...(action === "set_member_active"
@@ -466,6 +480,7 @@ export class FirebaseRepository {
         )
           throw Error("Diese Einladung kann nicht erneuert werden.");
         p.p_email = prior.data()!.email;
+        p.p_role = prior.data()!.role || "employee";
         await extraSet(ref, {
           ...prior.data(),
           revoked_at: new Date().toISOString(),
@@ -484,6 +499,12 @@ export class FirebaseRepository {
           business_id: this.businessId,
           email: p.p_email.trim().toLowerCase(),
           link_token: token,
+          role:
+            action === "renew_team_invite"
+              ? p.p_role || "employee"
+              : p.p_role === "admin"
+                ? "admin"
+                : "employee",
           expires_at: new Date(Date.now() + 7 * 86400000).toISOString(),
           expires_at_ms: Date.now() + 7 * 86400000 - 60000,
           accepted_at: null,
@@ -921,6 +942,24 @@ export async function firebaseRpc(action: string, p: Json = {}) {
     if (action === "initialize_account") return firebaseInitialize();
     if (action === "get_team_context") return (await firebaseSnapshot()).team;
     if (action === "employee_snapshot") return (await firebaseSnapshot()).data;
+    if (action === "usable_team_invite")
+      return usableFirebaseInvite(
+        db(),
+        firebaseAuth!.currentUser!.email!,
+        String(p.p_token || ""),
+      );
+    if (action === "set_company_role") {
+      await changeFirebaseBusinessRole(
+        db(),
+        firebaseAuth!.currentUser!.uid,
+        String(p.p_member || ""),
+        (await repository()).businessId,
+        p.p_role,
+        true,
+      );
+      currentRepository = null;
+      return null;
+    }
     if (action === "accept_team_invite") {
       const user = firebaseAuth!.currentUser!;
       await acceptFirebaseInvite(

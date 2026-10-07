@@ -3,10 +3,12 @@ service cloud.firestore {
   match /databases/{database}/documents {
     function signed() { return request.auth != null && request.auth.token.email_verified == true; }
     function admin() { return signed() && exists(/databases/$(database)/documents/hf_admins/$(request.auth.uid)) && get(/databases/$(database)/documents/hf_admins/$(request.auth.uid)).data.is_active == true; }
-    function owner(b) { return signed() && (exists(/databases/$(database)/documents/hf_businesses/$(b)) ? (get(/databases/$(database)/documents/hf_businesses/$(b)).data.get('_migration_state','complete') != 'in_progress' && get(/databases/$(database)/documents/hf_businesses/$(b)).data.get('_archived',false) != true && (get(/databases/$(database)/documents/hf_businesses/$(b)).data.owner_user_id == request.auth.uid || admin())) : false); }
+    function companyAdmin(b) { return signed() && exists(/databases/$(database)/documents/hf_businesses/$(b)/members/$(request.auth.uid)) && member(b).is_active == true && member(b).permissions.get('company_admin',false) == true; }
+    function managesUser(uid) { return signed() && exists(/databases/$(database)/documents/hf_accounts/$(uid)) && owner(get(/databases/$(database)/documents/hf_accounts/$(uid)).data.business_id); }
+    function owner(b) { return signed() && (exists(/databases/$(database)/documents/hf_businesses/$(b)) ? (get(/databases/$(database)/documents/hf_businesses/$(b)).data.get('_migration_state','complete') != 'in_progress' && get(/databases/$(database)/documents/hf_businesses/$(b)).data.get('_archived',false) != true && (get(/databases/$(database)/documents/hf_businesses/$(b)).data.owner_user_id == request.auth.uid || admin() || companyAdmin(b))) : false); }
     function member(b) { return get(/databases/$(database)/documents/hf_businesses/$(b)/members/$(request.auth.uid)).data; }
     function active(b) { return signed() && get(/databases/$(database)/documents/hf_businesses/$(b)).data.get('_migration_state','complete') != 'in_progress' && get(/databases/$(database)/documents/hf_businesses/$(b)).data.get('_archived',false) != true && (exists(/databases/$(database)/documents/hf_businesses/$(b)/members/$(request.auth.uid)) ? (member(b).is_active == true || admin()) : admin()); }
-    function permission(b, key) { return signed() && get(/databases/$(database)/documents/hf_businesses/$(b)).data.get('_migration_state','complete') != 'in_progress' && get(/databases/$(database)/documents/hf_businesses/$(b)).data.get('_archived',false) != true && member(b).is_active == true && (member(b).role == 'owner' || member(b).permissions.get(key, key in ['record_payments','close_visits']) == true); }
+    function permission(b, key) { return signed() && get(/databases/$(database)/documents/hf_businesses/$(b)).data.get('_migration_state','complete') != 'in_progress' && get(/databases/$(database)/documents/hf_businesses/$(b)).data.get('_archived',false) != true && member(b).is_active == true && (member(b).role == 'owner' || member(b).permissions.get('company_admin',false) == true || member(b).permissions.get(key, key in ['record_payments','close_visits']) == true); }
     function scope(b, facility) { return facility != '' && facility in member(b).get('facility_ids', []); }
     function rec(b,t,id) { return get(/databases/$(database)/documents/hf_businesses/$(b)/records/$(t + '~' + id)).data; }
     function after(b,t,id) { return getAfter(/databases/$(database)/documents/hf_businesses/$(b)/records/$(t + '~' + id)).data; }
@@ -27,25 +29,25 @@ service cloud.firestore {
       allow update, delete: if false;
     }
     match /hf_users/{uid} {
-      allow get: if signed() && (uid == request.auth.uid || admin());
+      allow get: if signed() && (uid == request.auth.uid || admin() || managesUser(uid));
       allow list: if admin();
       allow create, update: if signed() && uid == request.auth.uid && request.resource.data.keys().hasOnly(['uid','email','display_name','updated_at']) && request.resource.data.uid == uid && request.resource.data.email == request.auth.token.email.lower() && request.resource.data.display_name is string;
       allow delete: if false;
     }
     match /hf_accounts/{uid} {
-      allow get: if signed() && (uid == request.auth.uid || admin());
+      allow get: if signed() && (uid == request.auth.uid || admin() || managesUser(uid));
       allow create: if (admin() && request.resource.data.keys().hasOnly(['business_id']) && getAfter(/databases/$(database)/documents/hf_businesses/$(request.resource.data.business_id)/members/$(uid)).data.is_active == true) || (signed() && uid == request.auth.uid && (
         (request.resource.data.keys().hasOnly(['business_id']) && request.resource.data.business_id == uid && getAfter(/databases/$(database)/documents/hf_businesses/$(uid)).data.owner_user_id == uid) ||
         (request.resource.data.keys().hasOnly(['business_id','invite_id']) && accepts(request.resource.data.invite_id,request.resource.data.business_id))
       ));
-      allow update: if admin() && request.resource.data.keys().hasOnly(['business_id']) && getAfter(/databases/$(database)/documents/hf_businesses/$(request.resource.data.business_id)/members/$(uid)).data.is_active == true;
+      allow update: if (admin() || owner(resource.data.business_id) && request.resource.data.business_id == resource.data.business_id || signed() && uid == request.auth.uid && request.resource.data.business_id == resource.data.business_id && request.resource.data.keys().hasOnly(['business_id','invite_id']) && accepts(request.resource.data.invite_id,resource.data.business_id)) && request.resource.data.keys().hasOnly(['business_id','invite_id']) && getAfter(/databases/$(database)/documents/hf_businesses/$(request.resource.data.business_id)/members/$(uid)).data.is_active == true;
       allow list: if admin();
       allow delete: if false;
     }
     match /hf_invites/{id} {
-      allow get: if signed() && (owner(resource.data.business_id) || resource.data.email == request.auth.token.email.lower());
+      allow get: if signed() && (admin() || owner(resource.data.business_id) || resource.data.email == request.auth.token.email.lower());
       allow list: if signed() && owner(resource.data.business_id);
-      allow create: if owner(request.resource.data.business_id) && request.resource.data.keys().hasOnly(['business_id','email','link_token','expires_at','expires_at_ms','accepted_at','revoked_at']) && request.resource.data.accepted_at == null && request.resource.data.revoked_at == null && request.resource.data.email is string && request.resource.data.expires_at_ms > request.time.toMillis() && request.resource.data.expires_at_ms <= request.time.toMillis() + 604800000;
+      allow create: if owner(request.resource.data.business_id) && request.resource.data.keys().hasOnly(['business_id','email','link_token','role','expires_at','expires_at_ms','accepted_at','revoked_at']) && request.resource.data.get('role','employee') in ['employee','admin'] && request.resource.data.accepted_at == null && request.resource.data.revoked_at == null && request.resource.data.email is string && request.resource.data.expires_at_ms > request.time.toMillis() && request.resource.data.expires_at_ms <= request.time.toMillis() + 604800000;
       allow update: if (
         owner(resource.data.business_id) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['revoked_at'])
       ) || (
@@ -57,17 +59,17 @@ service cloud.firestore {
       allow get: if signed() && (b == request.auth.uid || active(b));
       allow list: if admin();
       allow create: if signed() && b == request.auth.uid && request.resource.data.owner_user_id == request.auth.uid && request.resource.data.owner_email == request.auth.token.email && !exists(/databases/$(database)/documents/hf_accounts/$(request.auth.uid)) && request.resource.data.keys().hasOnly(['name','owner_user_id','owner_email','created_at']);
-      allow update: if (owner(b) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name'])) || (admin() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['owner_user_id','owner_email']) && request.resource.data.owner_email == get(/databases/$(database)/documents/hf_users/$(request.resource.data.owner_user_id)).data.email && getAfter(/databases/$(database)/documents/hf_businesses/$(b)/members/$(request.resource.data.owner_user_id)).data.role == 'owner' && getAfter(/databases/$(database)/documents/hf_accounts/$(request.resource.data.owner_user_id)).data.business_id == b);
+      allow update: if (owner(b) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name'])) || (owner(b) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['owner_user_id','owner_email']) && request.resource.data.owner_email == get(/databases/$(database)/documents/hf_users/$(request.resource.data.owner_user_id)).data.email && getAfter(/databases/$(database)/documents/hf_businesses/$(b)/members/$(request.resource.data.owner_user_id)).data.role == 'owner' && getAfter(/databases/$(database)/documents/hf_accounts/$(request.resource.data.owner_user_id)).data.business_id == b);
       allow delete: if false;
       match /members/{uid} {
         allow get: if signed() && (request.auth.uid == uid || owner(b));
         allow list: if owner(b);
         allow create: if request.resource.data.keys().hasOnly(['id','user_id','business_id','role','display_name','is_active','facility_ids','permissions','onboarding_completed','setup_completed']) && request.resource.data.id == uid && request.resource.data.user_id == uid && request.resource.data.business_id == b && (
-          (admin() && request.resource.data.role in ['owner','employee'] && request.resource.data.is_active == true) ||
+          (owner(b) && request.resource.data.role in ['owner','employee'] && request.resource.data.is_active == true) ||
           (signed() && uid == request.auth.uid && b == uid && getAfter(/databases/$(database)/documents/hf_businesses/$(b)).data.owner_user_id == uid && request.resource.data.role == 'owner') ||
-          (signed() && uid == request.auth.uid && request.resource.data.role == 'employee' && request.resource.data.is_active == true && request.resource.data.facility_ids == [] && request.resource.data.permissions == {'record_payments':true,'close_visits':true} && accepts(getAfter(/databases/$(database)/documents/hf_accounts/$(uid)).data.invite_id,b))
+          (signed() && uid == request.auth.uid && request.resource.data.role == 'employee' && request.resource.data.is_active == true && request.resource.data.facility_ids == [] && (request.resource.data.permissions == {'record_payments':true,'close_visits':true} && invite(getAfter(/databases/$(database)/documents/hf_accounts/$(uid)).data.invite_id).get('role','employee') == 'employee' || request.resource.data.permissions == {'record_payments':true,'close_visits':true,'company_admin':true} && invite(getAfter(/databases/$(database)/documents/hf_accounts/$(uid)).data.invite_id).get('role','employee') == 'admin') && accepts(getAfter(/databases/$(database)/documents/hf_accounts/$(uid)).data.invite_id,b))
         );
-        allow update: if (admin() && request.resource.data.id == uid && request.resource.data.user_id == uid && request.resource.data.business_id == b && request.resource.data.role in ['owner','employee'] && (getAfter(/databases/$(database)/documents/hf_businesses/$(b)).data.owner_user_id != uid || (request.resource.data.role == 'owner' && request.resource.data.is_active == true))) || (owner(b) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['display_name','is_active','permissions','facility_ids','onboarding_completed','setup_completed']) && (resource.data.role != 'owner' || request.resource.data.is_active == true)) ||
+        allow update: if (signed() && uid == request.auth.uid && resource.data.role != 'owner' && request.resource.data.role == 'employee' && request.resource.data.user_id == uid && request.resource.data.id == uid && request.resource.data.business_id == b && request.resource.data.is_active == true && request.resource.data.facility_ids == [] && (request.resource.data.permissions == {'record_payments':true,'close_visits':true} && invite(getAfter(/databases/$(database)/documents/hf_accounts/$(uid)).data.invite_id).get('role','employee') == 'employee' || request.resource.data.permissions == {'record_payments':true,'close_visits':true,'company_admin':true} && invite(getAfter(/databases/$(database)/documents/hf_accounts/$(uid)).data.invite_id).get('role','employee') == 'admin') && accepts(getAfter(/databases/$(database)/documents/hf_accounts/$(uid)).data.invite_id,b)) || (owner(b) && request.resource.data.id == uid && request.resource.data.user_id == uid && request.resource.data.business_id == b && request.resource.data.role in ['owner','employee'] && (getAfter(/databases/$(database)/documents/hf_businesses/$(b)).data.owner_user_id != uid || (request.resource.data.role == 'owner' && request.resource.data.is_active == true))) || (owner(b) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['display_name','is_active','permissions','facility_ids','onboarding_completed','setup_completed']) && (resource.data.role != 'owner' || request.resource.data.is_active == true)) ||
           (active(b) && uid == request.auth.uid && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['onboarding_completed']) && request.resource.data.onboarding_completed == true);
         allow delete: if admin() && getAfter(/databases/$(database)/documents/hf_businesses/$(b)).data.owner_user_id != uid;
       }
@@ -135,7 +137,7 @@ service cloud.firestore {
         allow create: if validBase() && (owner(b) ? true : (
           signed() && b == request.auth.uid && request.resource.data._table in ['profiles','services'] && (request.resource.data._table == 'services' || request.resource.data.id == request.auth.uid) ? true : active(b) && employeeCreate(request.resource.data)
         ));
-        allow update: if validBase() && (admin() || immutableBase()) && (owner(b) ? true : active(b) && employeeUpdate(request.resource.data));
+        allow update: if validBase() && (owner(b) || immutableBase()) && (owner(b) ? true : active(b) && employeeUpdate(request.resource.data));
         allow delete: if owner(b) || (active(b) && (
           (resource.data._table == 'customer_default_services' && permission(b,'edit_customers') && scope(b,rec(b,'customers',resource.data.customer_id).facility_id)) ||
           (resource.data._table in ['treatment_services','color_formulas'] && rec(b,'treatments',resource.data.treatment_id).performed_by == request.auth.uid && rec(b,'treatments',resource.data.treatment_id).end_time == null)

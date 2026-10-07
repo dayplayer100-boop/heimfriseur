@@ -1,6 +1,7 @@
 import {
   doc,
   runTransaction,
+  getDocFromServer,
   increment,
   type Firestore,
 } from "firebase/firestore";
@@ -40,9 +41,22 @@ export async function acceptFirebaseInvite(
       existing.data()!.business_id === i.business_id
     )
       return;
-    if (existing.exists())
+    if (existing.exists() && existing.data()!.business_id !== i?.business_id)
       throw Error(
         "Dieses Konto hat bereits ein Unternehmen. Bitte ein noch nicht zugeordnetes Mitarbeiterkonto verwenden oder den App-Admin um eine geprüfte Übertragung bitten.",
+      );
+    const membershipRef = i
+      ? doc(database, "hf_businesses", i.business_id, "members", uid)
+      : null;
+    const membership =
+      existing.exists() &&
+      existing.data()!.business_id === i?.business_id &&
+      membershipRef
+        ? await tx.get(membershipRef)
+        : null;
+    if (membership?.data()?.role === "owner")
+      throw Error(
+        "Dieses Konto ist bereits Geschäftsführer. Bitte die Rolle innerhalb der Teamverwaltung ändern.",
       );
     if (
       !i ||
@@ -61,7 +75,11 @@ export async function acceptFirebaseInvite(
       display_name: name.trim() || email,
       is_active: true,
       facility_ids: [],
-      permissions: { record_payments: true, close_visits: true },
+      permissions: {
+        record_payments: true,
+        close_visits: true,
+        ...(i.role === "admin" ? { company_admin: true } : {}),
+      },
     });
     tx.update(ref, {
       accepted_at: new Date().toISOString(),
@@ -72,4 +90,22 @@ export async function acceptFirebaseInvite(
       { value: increment(1) },
     );
   });
+}
+
+export async function usableFirebaseInvite(
+  db: Firestore,
+  email: string,
+  token: string,
+) {
+  const invite = await getDocFromServer(
+    doc(db, "hf_invites", await hashToken(token)),
+  );
+  const value = invite.data();
+  return (
+    !!value &&
+    value.email === email.trim().toLowerCase() &&
+    !value.accepted_at &&
+    !value.revoked_at &&
+    value.expires_at_ms > Date.now()
+  );
 }

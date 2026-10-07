@@ -398,3 +398,33 @@ if (!repeatAssignment.includes("bereits ausschließlich App-Admin"))
 console.log(
   "PASS: admin directly assigned to existing director company without membership; extra company archived, records preserved, idempotent",
 );
+
+const removedExtra = execFileSync(
+  process.execPath,
+  [...assignArgs, "--delete-extra-company"],
+  { encoding: "utf8" },
+);
+if (
+  (await getDocument(extraPath)).error?.code !== 404 ||
+  (await getDocument(extraPath + "/records/customers~preserved")).error
+    ?.code !== 404 ||
+  (await getDocument(extraPath + "/finance/preserved")).error?.code !== 404
+)
+  throw Error("Extra company not fully removed");
+if (
+  (await getDocument(sourcePath)).fields.owner_user_id.stringValue !==
+  successor.localId
+)
+  throw Error("Target director changed by deletion");
+const backupPath = removedExtra.match(
+  /Sicherung der zusätzlichen Firma gespeichert: (.+)/,
+)?.[1];
+if (!backupPath) throw Error("Backup missing before deletion");
+const { readFileSync, unlinkSync } = await import("node:fs");
+const backup = JSON.parse(readFileSync(backupPath, "utf8"));
+if (!backup.documents.some((d) => d.name === extraPath + "/finance/preserved"))
+  throw Error("Finance missing from backup");
+unlinkSync(backupPath);
+console.log(
+  "PASS: complete duplicate company deletion after private backup, target owner and administrator identity preserved",
+);

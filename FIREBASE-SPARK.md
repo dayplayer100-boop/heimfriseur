@@ -284,3 +284,48 @@ node scripts/firebase-assign-admin-company.mjs --project heimfriseur-dayplayer10
 Beide Identitäten werden über bestätigte Firebase-Konten nachgeschlagen. Die Geschäftsführerrolle des Zielkontos muss vorhanden und aktiv sein. Eine zusätzliche, ausschließlich vom Admin gehaltene Firma wird mit `_archived: true` stillgelegt und hat anschließend keinen aktiven Geschäftsführer. Ihre Kunden-, Behandlungs-, Abrechnungs- und Finanzdokumente werden nicht gelöscht oder in T-cuts Firma gemischt. Die Sicherheitsregeln sperren den Geschäftszugriff auf stillgelegte Firmen; die App blendet sie aus der Liste aktiver Firmen aus. Ein Betreiber kann die Sicherung mit IAM wiederherstellen. Bei weiteren Teammitgliedern oder laufenden Behandlungen wird vor jeder Änderung abgebrochen. Der gesamte Vorgang erfolgt in einem Commit mit Revisions-/Dokumentprüfungen und Admin-Protokoll; Wiederholung ist ohne zusätzliche Änderungen möglich.
 
 Nach Veröffentlichung der aktuellen Regeln und der App öffnet der Admin bei fehlender oder veralteter Auswahl automatisch sein hinterlegtes Standardunternehmen. Dafür werden keine Rollen aus E-Mail-Namen, lokalen Einstellungen oder Profilfeldern abgeleitet. Ein bestehender Admin kann weiterhin ausdrücklich andere aktive Firmen auswählen, sofern solche vorhanden sind.
+
+
+## 6.4.0: Unternehmens-Administratoren und zusätzliche Firma löschen
+
+Unter Einstellungen → Team können Geschäftsführer und Unternehmens-Administratoren
+Mitarbeiter oder Administratoren einladen und bestehende Rollen ändern. Administratoren
+haben volle Rechte ausschließlich im eigenen Unternehmen. Globale App-Admin-Rechte
+(`hf_admins`) bleiben getrennt und können nur App-Admins/Betreiber vergeben werden.
+Ein Geschäftsführerwechsel erfolgt atomar nach Bestätigung; der bisherige Geschäftsführer
+wird Unternehmens-Administrator. Der aktuelle Geschäftsführer kann erst nach einer
+Übergabe herabgestuft werden. Eigene Rollenänderungen sind gesperrt.
+
+Ein gültiger Einladungslink wird auch für App-Admins berücksichtigt. Ein bereits demselben
+Unternehmen zugeordnetes Konto darf eine Einladung annehmen; eine andere bestehende
+Firma wird weiterhin nicht durch eine Einladung überschrieben. Links bleiben neben der
+E-Mail kopierbar und widerrufbar.
+
+Für das ausdrücklich gewünschte Entfernen einer zusätzlichen eigenen Admin-Firma:
+
+```bash
+node scripts/firebase-grant-admin.mjs --email dayplayer100@live.de --project heimfriseur-dayplayer100
+node scripts/firebase-assign-admin-company.mjs --project heimfriseur-dayplayer100 --from-admin dayplayer100@live.de --to-owner t-cut@web.de --delete-extra-company
+```
+
+Beide Firebase-Konten müssen bestätigt sein; T-cut muss bereits aktive Geschäftsführerin
+sein. Das Betreiberwerkzeug nutzt Cloud-Shell-IAM. Vor dem Löschen schreibt es eine
+private JSON-Sicherung mit Dateirechten 600 unter `~/.heimfriseur-backups/`.
+Danach löscht es die zusätzliche Firma einschließlich der bekannten Unterkollektionen,
+Einladungen und zugehöriger inaktiver Kontozuordnungen in einem geprüften Commit.
+Weitere aktive Teammitglieder, laufende Behandlungen, konkurrierende Änderungen oder
+zu große Datenmengen führen zum Abbruch. Bereits stillgelegte eigene Zusatzfirmen
+werden ebenfalls gesichert und entfernt. Auth-Konten, Plattform-Admin-Rechte und
+T-cuts Unternehmen samt Kundendaten bleiben erhalten. Die Sicherungsdatei enthält
+personenbezogene Daten und darf nicht in Git oder öffentliche Downloads gelangen.
+
+Ohne `--delete-extra-company` bleibt die bisherige Archivierung erhalten. Nach der
+Zuordnung öffnet dayplayer100 direkt T-cuts Unternehmen über Plattformrechte. T-cut
+kann anschließend zusätzlich eine Einladung mit der Rolle Administrator schicken;
+dafür wird kein eigenes Unternehmen angelegt. Die echte Firebase-Änderung erfolgt
+erst durch Ausführen des Betreiberbefehls, nicht allein durch den App-Build.
+
+Validierung: TypeScript, beide Builds, lokale Tests, Firestore/Auth-Emulator mit
+Rollenwechsel, Entzug von Finanzzugriff, gleicher Unternehmenszuordnung beim
+Einladen, Erhalt historischer Beträge und Löschen erst nach Sicherung. Mobiler
+Browser prüft zudem die tatsächliche Rollenänderung durch die Geschäftsführung.
