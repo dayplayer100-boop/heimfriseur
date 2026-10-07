@@ -1,3 +1,4 @@
+import { firebaseEnabled } from "./firebaseClient";
 import { canConfigureConnection } from "./supabase";
 import { AccountSecurity } from "./AccountSecurity";
 import { appVersion, checkAppUpdate } from "./AppUpdate";
@@ -30,6 +31,7 @@ export function Settings({
 }) {
   const {
     data,
+    rpc,
     demo,
     logout,
     setNotify,
@@ -107,6 +109,31 @@ export function Settings({
             Preisänderungen gelten für neue Behandlungen. Bereits gespeicherte
             Leistungspreise bleiben erhalten.
           </p>
+          {firebaseEnabled && (
+            <>
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  if (
+                    !window.confirm(
+                      "Preisliste vom Foto übernehmen? Passende Standardleistungen werden aktualisiert, fehlende ergänzt. Individuelle Heimpreise und alte Behandlungen bleiben erhalten.",
+                    )
+                  )
+                    return;
+                  void run(async () => {
+                    await rpc("apply_default_prices", {});
+                    setNotify("Standardpreisliste übernommen");
+                  });
+                }}
+              >
+                Standardpreisliste vom Foto übernehmen
+              </Button>
+              <p className="muted">
+                Neun Leistungen aus deiner Preisliste. Die vorgeschlagenen
+                Behandlungszeiten sind Schätzwerte und lassen sich ändern.
+              </p>
+            </>
+          )}
           <div className="service-grid">
             {data.services.map((s) => (
               <section className="service-card panel" key={s.id}>

@@ -1,3 +1,4 @@
+import { authReturnUrl } from "./defaultServices";
 import { useEffect, useState } from "react";
 import {
   createUserWithEmailAndPassword,
@@ -19,6 +20,27 @@ import { Button, Input, formObject } from "./ui";
 import { useStore } from "./store";
 export function firebaseError(error: unknown) {
   const code = (error as { code?: string }).code;
+  if (
+    [
+      "auth/invalid-credential",
+      "auth/wrong-password",
+      "auth/user-not-found",
+    ].includes(code || "")
+  )
+    return "E-Mail oder Passwort stimmen nicht. Bei einem Google-Konto zunächst mit Google anmelden oder über Passwort vergessen ein Passwort einrichten.";
+  if (code === "auth/email-already-in-use")
+    return "Für diese E-Mail gibt es bereits ein Konto. Bitte anmelden oder Passwort vergessen verwenden.";
+  if (
+    code === "auth/account-exists-with-different-credential" ||
+    code === "auth/credential-already-in-use"
+  )
+    return "Diese E-Mail gehört bereits zu einem Konto mit einer anderen Anmeldeart. Melde dich zuerst damit an und verbinde Google unter Einstellungen → App → Kontosicherheit.";
+  if (code === "auth/invalid-email")
+    return "Bitte eine gültige E-Mail-Adresse eingeben.";
+  if (code === "auth/user-disabled")
+    return "Dieses Anmeldekonto wurde deaktiviert. Bitte den App-Admin kontaktieren.";
+  if (code === "auth/requires-recent-login")
+    return "Bitte erneut anmelden und diese Aktion wiederholen.";
   if (code === "auth/too-many-requests" || code === "resource-exhausted")
     return "Zu viele Anfragen oder das kostenlose Kontingent ist erreicht. Bitte später erneut versuchen.";
   if (
@@ -77,19 +99,40 @@ export function FirebaseAuthScreen() {
   async function verifyEmail() {
     if (!firebaseAuth?.currentUser || Date.now() < resendAfter) return;
     await sendEmailVerification(firebaseAuth.currentUser, {
-      url: location.origin,
+      url: authReturnUrl(
+        location.origin,
+        sessionStorage.getItem("heimfriseur-invite"),
+      ),
     });
     setResendAfter(Date.now() + 60000);
     setMessage("Bestätigung angefordert. Bitte Postfach und Spam prüfen.");
   }
   return (
     <div className="auth">
-      <div className="auth-brand"><div className="brand-icon"><Scissors /></div><strong>Heim<span>Friseur</span></strong><h1>Mit Ruhe durch deinen Arbeitstag.</h1><p>Die Firebase-Testversion für deine Friseurbesuche in Einrichtungen.</p></div>
+      <div className="auth-brand">
+        <div className="brand-icon">
+          <Scissors />
+        </div>
+        <strong>
+          Heim<span>Friseur</span>
+        </strong>
+        <h1>Mit Ruhe durch deinen Arbeitstag.</h1>
+        <p>
+          Die Firebase-Testversion für deine Friseurbesuche in Einrichtungen.
+        </p>
+      </div>
       <section className="auth-card">
         <p className="warning">
           Firebase-Testversion · getrennt von deiner bisherigen App
         </p>
         <InstallAppButton />
+        {sessionStorage.getItem("heimfriseur-invite") && (
+          <p className="success">
+            Du öffnest eine Mitarbeitereinladung. Melde dich mit der
+            eingeladenen E-Mail an oder erstelle dafür ein Konto. Die Einladung
+            bleibt bei der E-Mail-Bestätigung erhalten.
+          </p>
+        )}
         {!firebaseAuth ? (
           <>
             <h2>Firebase noch einrichten</h2>
@@ -152,21 +195,28 @@ export function FirebaseAuthScreen() {
                       throw { code: "auth/weak-password" };
                     await createUserWithEmailAndPassword(
                       firebaseAuth!,
-                      d.email,
+                      d.email.trim(),
                       d.password,
                     );
                     await verifyEmail();
                   } else if (mode === "reset") {
-                    await sendPasswordResetEmail(firebaseAuth!, d.email, {
-                      url: location.origin,
-                    });
+                    await sendPasswordResetEmail(
+                      firebaseAuth!,
+                      d.email.trim(),
+                      {
+                        url: authReturnUrl(
+                          location.origin,
+                          sessionStorage.getItem("heimfriseur-invite"),
+                        ),
+                      },
+                    );
                     setMessage(
                       "Falls ein passendes Konto vorhanden ist, erhältst du einen Link. Bitte auch Spam prüfen.",
                     );
                   } else
                     await signInWithEmailAndPassword(
                       firebaseAuth!,
-                      d.email,
+                      d.email.trim(),
                       d.password,
                     );
                 });

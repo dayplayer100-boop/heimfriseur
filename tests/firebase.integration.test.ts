@@ -285,6 +285,89 @@ suite("Firebase Spark real transaction workflows", () => {
     expect((await owner.snapshot()).data.facilities[0].name).toBe(
       "Vom App-Admin bearbeitet",
     );
+    const invite = await platform.mutate("create_team_invite", {
+      p_email: " Invite@Test.invalid ",
+    });
+    const savedInvitation = (await platform.snapshot()).team.invitations.find(
+      (i) => i.email === "invite@test.invalid",
+    );
+    expect(savedInvitation?.link_token).toBe(invite.token);
+    const renewed = await platform.mutate("renew_team_invite", {
+      p_invite: savedInvitation!.id,
+    });
+    const invitationList = (await platform.snapshot()).team.invitations;
+    expect(
+      invitationList.find((i) => i.id === savedInvitation!.id)?.revoked_at,
+    ).toBeTruthy();
+    expect(
+      invitationList.find((i) => i.link_token === renewed.token)?.revoked_at,
+    ).toBeNull();
+    const invitedDb = (
+      env
+        .authenticatedContext("invited-user", {
+          email: "invite@test.invalid",
+          email_verified: true,
+        })
+        .firestore() as unknown as { _delegate: Firestore }
+    )._delegate;
+    const { acceptFirebaseInvite } = await import("../src/firebaseInvitations");
+    await expect(
+      acceptFirebaseInvite(
+        invitedDb,
+        "invited-user",
+        "invite@test.invalid",
+        "Neu",
+        invite.token,
+      ),
+    ).rejects.toBeTruthy();
+    await acceptFirebaseInvite(
+      invitedDb,
+      "invited-user",
+      "invite@test.invalid",
+      "Neu",
+      renewed.token,
+    );
+    await acceptFirebaseInvite(
+      invitedDb,
+      "invited-user",
+      "invite@test.invalid",
+      "Neu",
+      renewed.token,
+    );
+    expect(
+      (
+        await getDoc(
+          doc(adminDb, "hf_businesses", "owner", "members", "invited-user"),
+        )
+      ).data()?.role,
+    ).toBe("employee");
+    await expect(
+      getDoc(
+        doc(
+          invitedDb,
+          "hf_businesses",
+          "owner",
+          "finance",
+          all.data.treatments[0].id,
+        ),
+      ),
+    ).rejects.toBeTruthy();
+    const oldFinance = structuredClone(
+      (await platform.snapshot()).data.treatments,
+    );
+    await platform.mutate("apply_default_prices");
+    const withPrices = await platform.snapshot();
+    expect(
+      withPrices.data.services.find((s) => s.name === "Herrenschnitt trocken")
+        ?.price,
+    ).toBe(18.5);
+    expect(
+      withPrices.data.services.find((s) => s.name === "Damenschnitt")?.price,
+    ).toBe(22);
+    expect(withPrices.data.treatments).toEqual(oldFinance);
+    const priceCount = withPrices.data.services.length;
+    await platform.mutate("apply_default_prices");
+    expect((await platform.snapshot()).data.services.length).toBe(priceCount);
     const { changeFirebaseAdmin, changeFirebaseBusinessRole } =
       await import("../src/firebaseAdministration");
     const workerEmail = "employee@test.invalid";

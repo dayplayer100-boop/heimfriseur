@@ -250,6 +250,7 @@ export interface TeamContext {
   assignments: Assignment[];
   invitations: {
     id: string;
+    link_token?: string;
     email: string;
     expires_at: string;
     accepted_at: string | null;

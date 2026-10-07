@@ -115,6 +115,9 @@ try {
   await seed("hf_accounts/browser-colleague", {
     business_id: { stringValue: session.uid },
   });
+  await page.evaluate(() =>
+    sessionStorage.setItem("heimfriseur-invite", "stale-employee-invite"),
+  );
   await page.reload();
   await page
     .getByRole("heading", { name: "Benutzer & Rollen", exact: true })
@@ -147,9 +150,86 @@ try {
     await page.locator("body").evaluate((b) => b.scrollWidth > innerWidth + 1)
   )
     throw Error("Admin mobile horizontal overflow");
+  await page.getByLabel("Unternehmen verwalten").selectOption(session.uid);
+  await page.getByRole("heading", { name: /Guten/ }).waitFor();
+  await page.goto(url + "/#settings");
+  await page.getByRole("button", { name: "Team", exact: true }).click();
+  const inviteEmail = `invited-${Date.now()}@test.invalid`;
+  await page.getByLabel("E-Mail des Mitarbeiters").fill(inviteEmail);
+  await page
+    .getByRole("button", { name: "Einladungslink erstellen", exact: true })
+    .click();
+  const inviteField = page.getByLabel("Einladungslink für " + inviteEmail, {
+    exact: true,
+  });
+  await inviteField.waitFor();
+  const inviteLink = await inviteField.inputValue();
+  if (!new URL(inviteLink).searchParams.get("invite"))
+    throw Error("Invitation link missing beside email");
+  await page.reload();
+  await page.getByRole("button", { name: "Team", exact: true }).click();
+  if (
+    (await page
+      .getByLabel("Einladungslink für " + inviteEmail, { exact: true })
+      .inputValue()) !== inviteLink
+  )
+    throw Error("Invitation link lost after reload");
+  if (
+    await page.locator("body").evaluate((b) => b.scrollWidth > innerWidth + 1)
+  )
+    throw Error("Invitation mobile horizontal overflow");
+  await page.screenshot({
+    path: "/tmp/heim-firebase-invites.png",
+    fullPage: true,
+  });
+  await page.evaluate(() =>
+    sessionStorage.removeItem("heimfriseur-admin-business"),
+  );
+  await page.reload();
+  await page
+    .getByRole("heading", { name: "Benutzer & Rollen", exact: true })
+    .waitFor();
+  // Exercise both providers against Auth emulator, keeping the same UID and admin registry.
+  const providerResult = await page.evaluate(
+    async ({ email, uid }) => {
+      const { firebaseAuth } = await import("/src/firebaseClient.ts");
+      const auth = await import("/node_modules/.vite/deps/firebase_auth.js");
+      const credential = auth.GoogleAuthProvider.credential(
+        JSON.stringify({
+          sub: "browser-google-account",
+          email,
+          email_verified: true,
+        }),
+      );
+      const linked = await auth.linkWithCredential(
+        firebaseAuth.currentUser,
+        credential,
+      );
+      await firebaseAuth.signOut();
+      const google = await auth.signInWithCredential(firebaseAuth, credential);
+      await firebaseAuth.signOut();
+      const password = await auth.signInWithEmailAndPassword(
+        firebaseAuth,
+        email,
+        "BrowserTestPasswort2026!",
+      );
+      return (
+        linked.user.uid === uid &&
+        google.user.uid === uid &&
+        password.user.uid === uid
+      );
+    },
+    { email, uid: session.uid },
+  );
+  if (!providerResult) throw Error("Provider linking changed the identity");
+  await page
+    .getByRole("heading", { name: "Benutzer & Rollen", exact: true })
+    .waitFor();
+  if (await page.evaluate(() => sessionStorage.getItem("heimfriseur-invite")))
+    throw Error("Stale invitation still blocks the administrator");
   if (errors.length) throw Error(errors.join("\n"));
   console.log(
-    "PASS: mobile Firebase registration, genuine emulated verification email, owner initialization, persistence after reload, admin-only user management and actual role save, no overflow",
+    "PASS: mobile Firebase registration, genuine emulated verification email, owner initialization, persistence after reload, admin-only user management, actual role save, stale invitation recovery, linked Google/password identity, no overflow",
   );
 } catch (e) {
   await page.screenshot({

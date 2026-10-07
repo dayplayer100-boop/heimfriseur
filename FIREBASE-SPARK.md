@@ -254,3 +254,21 @@ npx --yes --package firebase-tools@15.32.1 firebase deploy --only firestore:rule
 ```
 
 Nur die parallele Test-Site ist betroffen, wenn in `firebase.parallel.json` die eigene Test-Site `heimfriseur-test-237368331242` eingetragen ist. Supabase und die ursprüngliche Hosting-Konfiguration bleiben bestehen. Plattform-Quellcode, Google-Cloud-IAM und Auth-Konten löschen/Passwörter ändern sind weiterhin Betreiberaufgaben; App-Admins verwalten die Geschäftsdaten und App-Rollen.
+
+## 6.3.1: Anmeldung und Mitarbeiter-Einladungen
+
+Ein noch gespeicherter Mitarbeiter-Einladungslink konnte auch einen bereits angemeldeten Plattform-Admin im Beitrittsbildschirm festhalten („Dieses Konto gehört bereits zu einem Unternehmen“). Vor einem Beitritt wird jetzt die serverseitige Admin-Rolle geprüft. Ein aktiver Admin verlässt diesen Mitarbeiterablauf automatisch und öffnet die Verwaltung. Wiederholtes Annehmen derselben bereits angenommenen Einladung ist für dieselbe UID und Unternehmenszuordnung ebenfalls erfolgreich; fremde Firmenzuordnungen werden weiterhin nicht überschrieben.
+
+Die Einladung bleibt im Rücksprung-Link bei E-Mail-Bestätigung und Passwortzurücksetzung erhalten. Neue Firebase-Einladungen speichern den Link-Token zusätzlich in ihrem geschützten Einladungsdokument, damit der Geschäftsführer/Admin den Link neben der E-Mail erneut kopieren kann. Dafür erhalten weder andere Unternehmen noch beliebige Mitarbeiter Leserechte. Alte Einladungen ohne Link-Token können über „Neuen Link erstellen“ ersetzt werden; Widerruf des alten und Erzeugung des neuen Links erfolgen atomar. Tokens nicht in Git, Screenshots oder öffentliche Logs aufnehmen.
+
+Unter Einstellungen → App → Kontosicherheit lässt sich Google mit einem angemeldeten Konto verbinden. Die UID und damit Rollen und Daten bleiben erhalten. Google-Konten können über eine Passwort-E-Mail zusätzlich einen Passwortzugang einrichten. Firebase Authentication muss **E-Mail/Passwort und Google** aktiviert haben und `heimfriseur-test-237368331242.web.app` als autorisierte Domain führen. Ein echter Google-OAuth-/Mailversandtest erfordert weiterhin die eigene Console-Konfiguration; Emulatorprüfungen ersetzen diesen nicht.
+
+Die Standardvorlage enthält ausschließlich die neun Leistungen und Preise aus dem Foto, keine Bank-/Adressdaten. Neue Firebase-Unternehmen erhalten sie automatisch. Bestehende Firmen können sie unter Leistungen ausdrücklich übernehmen. Bestehende passende Leistungen werden anhand von Name/Alias aktualisiert; individuelle Heimpreislisten und historische Preis-Snapshots bleiben erhalten. Behandlungszeiten der Vorlage sind editierbare Schätzungen.
+
+Für den gewünschten Plattform-Admin kann der Betreiber bei fehlendem Registry-Eintrag in seiner Cloud Shell idempotent ausführen:
+
+```bash
+node scripts/firebase-grant-admin.mjs --email dayplayer100@live.de --project heimfriseur-dayplayer100
+```
+
+Der Befehl prüft das bestätigte Firebase-Konto und erhält die Geschäftsführerzuordnung von T-cut sowie sämtliche Geschäftsdaten. Er ist bei einem bloß gespeicherten Einladungslink nicht erforderlich: Dort reicht die aktualisierte App oder vorläufig „Einladung verlassen“.

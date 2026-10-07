@@ -1,3 +1,4 @@
+import { firebaseEnabled } from "./firebaseClient";
 import { PermissionsEditor } from "./TeamPermissions";
 import { BillingEditor } from "./Payments";
 import type { Edit } from "./Records";
@@ -88,7 +89,7 @@ export function TeamSettings() {
   const { team, demo, rpc, run, setNotify, data, appAdmin } = useStore();
   const [permissionMember, setPermissionMember] = useState<string | null>(null);
   const [email, setEmail] = useState(""),
-    [link, setLink] = useState(""),
+    [inviteLinks, setInviteLinks] = useState<Record<string, string>>({}),
     [confirm, setConfirm] = useState<string | null>(null);
   if (!team) return <Empty title="Team wird geladen" />;
   const changeMember = team.members.find((m) => m.id === confirm);
@@ -115,7 +116,10 @@ export function TeamSettings() {
           <div className="list-row" key={m.id}>
             <div>
               <strong>
-                {m.display_name ||
+                {(teamRoleLabel(m, appAdmin) === "Admin" &&
+                m.display_name === "Geschäftsführer"
+                  ? "Admin"
+                  : m.display_name) ||
                   (teamRoleLabel(m, appAdmin) === "Admin"
                     ? "Admin"
                     : m.role === "owner"
@@ -162,11 +166,13 @@ export function TeamSettings() {
                 rpc("create_team_invite", { p_email: email }),
               );
               if (result) {
-                setLink(
-                  location.origin +
+                setInviteLinks((previous) => ({
+                  ...previous,
+                  [email.trim().toLowerCase()]:
+                    location.origin +
                     "/?invite=" +
                     encodeURIComponent(result.token),
-                );
+                }));
                 setEmail("");
               }
             }}
@@ -181,27 +187,6 @@ export function TeamSettings() {
             <Button type="submit">Einladungslink erstellen</Button>
           </form>
         )}
-        {link && (
-          <div className="invite-link">
-            <label>
-              Einladungslink
-              <input readOnly value={link} onFocus={(e) => e.target.select()} />
-            </label>
-            <Button
-              variant="secondary"
-              onClick={async () => {
-                try {
-                  await navigator.clipboard.writeText(link);
-                  setNotify("Link kopiert");
-                } catch {
-                  setNotify("Link markieren und kopieren");
-                }
-              }}
-            >
-              Link kopieren
-            </Button>
-          </div>
-        )}
         {team.invitations
           .filter((i) => !i.accepted_at)
           .map((i) => (
@@ -215,6 +200,60 @@ export function TeamSettings() {
                       ? "Abgelaufen"
                       : "Gültig bis " + dateLabel(i.expires_at.slice(0, 10))}
                 </p>
+                {!i.revoked_at &&
+                  new Date(i.expires_at).getTime() > Date.now() &&
+                  (i.link_token || inviteLinks[i.email]) && (
+                    <div className="invite-link">
+                      <label>
+                        Einladungslink für {i.email}
+                        <input
+                          readOnly
+                          value={
+                            i.link_token
+                              ? location.origin +
+                                "/?invite=" +
+                                encodeURIComponent(i.link_token)
+                              : inviteLinks[i.email]
+                          }
+                          onFocus={(e) => e.target.select()}
+                        />
+                      </label>
+                      <Button
+                        variant="secondary"
+                        onClick={async () => {
+                          try {
+                            await navigator.clipboard.writeText(
+                              i.link_token
+                                ? location.origin +
+                                    "/?invite=" +
+                                    encodeURIComponent(i.link_token)
+                                : inviteLinks[i.email],
+                            );
+                            setNotify("Einladungslink kopiert");
+                          } catch {
+                            setNotify("Bitte den Link markieren und kopieren.");
+                          }
+                        }}
+                      >
+                        Link kopieren
+                      </Button>
+                    </div>
+                  )}
+                {firebaseEnabled && !i.accepted_at && (
+                  <Button
+                    variant="secondary"
+                    onClick={() =>
+                      void run(async () => {
+                        await rpc("renew_team_invite", { p_invite: i.id });
+                        setNotify(
+                          "Neuer Link erstellt. Der bisherige Link ist jetzt ungültig.",
+                        );
+                      })
+                    }
+                  >
+                    Neuen Link erstellen
+                  </Button>
+                )}
               </div>
               {!i.revoked_at && (
                 <Button

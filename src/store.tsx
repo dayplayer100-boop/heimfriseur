@@ -290,9 +290,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             setLoading(false);
             return;
           }
+          const admin = await backendRpc("get_app_admin_context");
+          if (admin.error) throw admin.error;
+          if (
+            admin.data?.is_admin &&
+            sessionStorage.getItem("heimfriseur-invite")
+          ) {
+            sessionStorage.removeItem("heimfriseur-invite");
+            setNotify(
+              "Du bist als App-Admin angemeldet. Die Mitarbeitereinladung wurde verlassen.",
+            );
+          }
           if (!sessionStorage.getItem("heimfriseur-invite")) {
-            const admin = await backendRpc("get_app_admin_context");
-            if (admin.error) throw admin.error;
             if (!admin.data?.is_admin) {
               const init = await backendRpc("initialize_account");
               if (init.error) throw init.error;

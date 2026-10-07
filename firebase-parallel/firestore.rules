@@ -45,7 +45,7 @@ service cloud.firestore {
     match /hf_invites/{id} {
       allow get: if signed() && (owner(resource.data.business_id) || resource.data.email == request.auth.token.email.lower());
       allow list: if signed() && owner(resource.data.business_id);
-      allow create: if owner(request.resource.data.business_id) && request.resource.data.keys().hasOnly(['business_id','email','expires_at','expires_at_ms','accepted_at','revoked_at']) && request.resource.data.accepted_at == null && request.resource.data.revoked_at == null && request.resource.data.email is string && request.resource.data.expires_at_ms > request.time.toMillis() && request.resource.data.expires_at_ms <= request.time.toMillis() + 604800000;
+      allow create: if owner(request.resource.data.business_id) && request.resource.data.keys().hasOnly(['business_id','email','link_token','expires_at','expires_at_ms','accepted_at','revoked_at']) && request.resource.data.accepted_at == null && request.resource.data.revoked_at == null && request.resource.data.email is string && request.resource.data.expires_at_ms > request.time.toMillis() && request.resource.data.expires_at_ms <= request.time.toMillis() + 604800000;
       allow update: if (
         owner(resource.data.business_id) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['revoked_at'])
       ) || (
@@ -133,7 +133,7 @@ service cloud.firestore {
           d._table == 'treatment_payments' ? (permission(b,'record_payments') && assigned(b,rec(b,'treatments',resource.data.treatment_id).appointment_id) && d.treatment_id == resource.data.treatment_id) : false;
         }
         allow create: if validBase() && (owner(b) ? true : (
-          signed() && b == request.auth.uid && request.resource.data._table == 'profiles' && request.resource.data.id == request.auth.uid ? true : active(b) && employeeCreate(request.resource.data)
+          signed() && b == request.auth.uid && request.resource.data._table in ['profiles','services'] && (request.resource.data._table == 'services' || request.resource.data.id == request.auth.uid) ? true : active(b) && employeeCreate(request.resource.data)
         ));
         allow update: if validBase() && (admin() || immutableBase()) && (owner(b) ? true : active(b) && employeeUpdate(request.resource.data));
         allow delete: if owner(b) || (active(b) && (

@@ -1,3 +1,4 @@
+import { firebaseEnabled } from "./firebaseClient";
 import { AdminUsers } from "./AdminUsers";
 import { useState } from "react";
 import { useStore } from "./store";
@@ -63,6 +64,12 @@ export function AppAdminPanel({ compact = false }: { compact?: boolean }) {
       </Field>
       {!compact && (
         <>
+          {firebaseEnabled && !appAdmin.users && (
+            <p className="warning">
+              Der Admin-Zugriff ist vorhanden. Für die Benutzerverwaltung müssen
+              zusätzlich die aktuellen Firestore-Regeln veröffentlicht werden.
+            </p>
+          )}
           <AdminUsers />
           <h3>Unternehmen administrieren</h3>
           <p>

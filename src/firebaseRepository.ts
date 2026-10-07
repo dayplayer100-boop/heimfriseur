@@ -1,3 +1,5 @@
+import { acceptFirebaseInvite } from "./firebaseInvitations";
+import { defaultServices } from "./defaultServices";
 import {
   changeFirebaseAdmin,
   changeFirebaseBusinessRole,
@@ -432,8 +434,43 @@ export class FirebaseRepository {
           ? { is_active: p.p_active }
           : { permissions: p.p_permissions }),
       });
-    } else if (action === "create_team_invite") {
-      if (!owner || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(p.p_email))
+    } else if (action === "apply_default_prices") {
+      if (!owner) throw { code: "42501" };
+      for (const template of defaultServices) {
+        const existing = workflow.data.services.find((s) =>
+          [template.name, ...template.aliases].some(
+            (n) => n.toLowerCase() === s.name.toLowerCase(),
+          ),
+        );
+        workflow.save("services", {
+          ...(existing || {}),
+          name: template.name,
+          price: template.price,
+          duration_minutes:
+            existing?.duration_minutes || template.duration_minutes,
+          is_active: true,
+        });
+      }
+    } else if (["create_team_invite", "renew_team_invite"].includes(action)) {
+      if (action === "renew_team_invite") {
+        if (!owner) throw { code: "42501" };
+        const ref = doc(this.db, "hf_invites", p.p_invite);
+        const prior = await getDocFromServer(ref);
+        if (
+          prior.data()?.business_id !== this.businessId ||
+          prior.data()?.accepted_at
+        )
+          throw Error("Diese Einladung kann nicht erneuert werden.");
+        p.p_email = prior.data()!.email;
+        await extraSet(ref, {
+          ...prior.data(),
+          revoked_at: new Date().toISOString(),
+        });
+      }
+      if (
+        !owner ||
+        !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(p.p_email || "").trim())
+      )
         throw Error("E-Mail-Adresse prüfen.");
       const token = crypto.randomUUID() + crypto.randomUUID();
       const id = await hashToken(token);
@@ -442,13 +479,14 @@ export class FirebaseRepository {
         value: {
           business_id: this.businessId,
           email: p.p_email.trim().toLowerCase(),
+          link_token: token,
           expires_at: new Date(Date.now() + 7 * 86400000).toISOString(),
           expires_at_ms: Date.now() + 7 * 86400000 - 60000,
           accepted_at: null,
           revoked_at: null,
         },
       });
-      result = { token };
+      result = { token, email: p.p_email.trim().toLowerCase() };
     } else if (action === "revoke_team_invite") {
       if (!owner) throw { code: "42501" };
       const ref = doc(this.db, "hf_invites", p.p_invite);
@@ -689,25 +727,34 @@ function db() {
 export async function firebaseAdminContext(): Promise<AppAdminContext> {
   const database = db(),
     uid = firebaseAuth!.currentUser!.uid;
+  const admin = await getDocFromServer(doc(database, "hf_admins", uid));
   const directoryRef = doc(database, "hf_users", uid);
-  const directory = await getDocFromServer(directoryRef);
+  let directory;
+  try {
+    directory = await getDocFromServer(directoryRef);
+  } catch (e) {
+    if ((e as { code?: string }).code !== "permission-denied") throw e;
+  }
   const signedUser = firebaseAuth!.currentUser!;
   const email = signedUser.email!.trim().toLowerCase();
   const display_name = signedUser.displayName || email;
   if (
-    directory.data()?.email !== email ||
-    directory.data()?.display_name !== display_name
+    directory?.data()?.email !== email ||
+    directory?.data()?.display_name !== display_name
   ) {
-    await runTransaction(database, async (tx) => {
-      tx.set(directoryRef, {
-        uid,
-        email,
-        display_name,
-        updated_at: new Date().toISOString(),
+    try {
+      await runTransaction(database, async (tx) => {
+        tx.set(directoryRef, {
+          uid,
+          email,
+          display_name,
+          updated_at: new Date().toISOString(),
+        });
       });
-    });
+    } catch (e) {
+      if ((e as { code?: string }).code !== "permission-denied") throw e;
+    }
   }
-  const admin = await getDocFromServer(doc(database, "hf_admins", uid));
   if (!admin.data()?.is_active) return { is_admin: false };
   let selection = "";
   try {
@@ -734,15 +781,22 @@ export async function firebaseAdminContext(): Promise<AppAdminContext> {
   const audit = (
     await getDocsFromServer(collection(database, "hf_admin_audit"))
   ).docs.map((d) => ({ id: d.id, ...d.data() })) as AppAdminContext["audit"];
-  const accounts = await getDocsFromServer(collection(database, "hf_accounts"));
-  const users = (
-    await getDocsFromServer(collection(database, "hf_users"))
-  ).docs.map((d) => ({
-    uid: d.id,
-    ...d.data(),
-    business_id:
-      accounts.docs.find((a) => a.id === d.id)?.data().business_id || null,
-  })) as AppAdminContext["users"];
+  let users: AppAdminContext["users"];
+  try {
+    const accounts = await getDocsFromServer(
+      collection(database, "hf_accounts"),
+    );
+    users = (
+      await getDocsFromServer(collection(database, "hf_users"))
+    ).docs.map((d) => ({
+      uid: d.id,
+      ...d.data(),
+      business_id:
+        accounts.docs.find((a) => a.id === d.id)?.data().business_id || null,
+    })) as AppAdminContext["users"];
+  } catch (e) {
+    if ((e as { code?: string }).code !== "permission-denied") throw e;
+  }
   return {
     is_admin: true,
     selected_business_id: selection || null,
@@ -779,7 +833,37 @@ export async function firebaseInitialize() {
     tx.set(ref, { business_id: user.uid });
     tx.set(doc(root, "members", user.uid), member);
     tx.set(doc(root, "state", "revision"), { value: 0 });
-    tx.set(doc(root, "catalogue", "main"), { services: {}, prices: {} });
+    const services = defaultServices.map((s, index) => ({
+      id: `default-service-${index + 1}`,
+      user_id: user.uid,
+      business_id: user.uid,
+      _table: "services",
+      _facility_id: "",
+      name: s.name,
+      price: s.price,
+      duration_minutes: s.duration_minutes,
+      is_active: true,
+      created_at: new Date().toISOString(),
+    }));
+    for (const service of services)
+      tx.set(
+        doc(root, "records", firebaseRecordId("services", service.id)),
+        service,
+      );
+    tx.set(doc(root, "catalogue", "main"), {
+      services: Object.fromEntries(
+        services.map((s) => [
+          s.id,
+          {
+            name: s.name,
+            price: s.price,
+            duration: s.duration_minutes,
+            is_active: true,
+          },
+        ]),
+      ),
+      prices: {},
+    });
     tx.set(doc(root, "records", firebaseRecordId("profiles", user.uid)), {
       id: user.uid,
       user_id: user.uid,
@@ -829,54 +913,14 @@ export async function firebaseRpc(action: string, p: Json = {}) {
     if (action === "get_team_context") return (await firebaseSnapshot()).team;
     if (action === "employee_snapshot") return (await firebaseSnapshot()).data;
     if (action === "accept_team_invite") {
-      const database = db(),
-        user = firebaseAuth!.currentUser!,
-        id = await hashToken(p.p_token || ""),
-        ref = doc(database, "hf_invites", id),
-        account = doc(database, "hf_accounts", user.uid);
-      await runTransaction(database, async (tx) => {
-        const [invite, existing] = await Promise.all([
-          tx.get(ref),
-          tx.get(account),
-        ]);
-        const i = invite.data();
-        if (existing.exists())
-          throw Error(
-            "Dieses Konto gehört bereits zu einem Unternehmen. Es wurde nichts geändert.",
-          );
-        if (
-          !i ||
-          i.email !== user.email?.toLowerCase() ||
-          i.revoked_at ||
-          i.accepted_at ||
-          i.expires_at < new Date().toISOString()
-        )
-          throw Error(
-            "Einladung abgelaufen oder nicht für dieses Konto bestimmt.",
-          );
-        tx.set(account, { business_id: i.business_id, invite_id: id });
-        tx.set(
-          doc(database, "hf_businesses", i.business_id, "members", user.uid),
-          {
-            id: user.uid,
-            business_id: i.business_id,
-            user_id: user.uid,
-            role: "employee",
-            display_name: p.p_name,
-            is_active: true,
-            facility_ids: [],
-            permissions: { record_payments: true, close_visits: true },
-          },
-        );
-        tx.update(ref, {
-          accepted_at: new Date().toISOString(),
-          accepted_by: user.uid,
-        });
-        tx.update(
-          doc(database, "hf_businesses", i.business_id, "state", "revision"),
-          { value: increment(1) },
-        );
-      });
+      const user = firebaseAuth!.currentUser!;
+      await acceptFirebaseInvite(
+        db(),
+        user.uid,
+        user.email!.trim().toLowerCase(),
+        String(p.p_name || ""),
+        String(p.p_token || ""),
+      );
       currentRepository = null;
       return null;
     }

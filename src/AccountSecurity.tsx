@@ -1,3 +1,4 @@
+import { FirebaseAccountSecurity } from "./FirebaseAccountSecurity";
 import { firebaseEnabled } from "./firebaseClient";
 import { useEffect, useRef, useState } from "react";
 import { supabase } from "./supabase";
@@ -50,17 +51,7 @@ export function AccountSecurity({ required = false }: { required?: boolean }) {
     if (required) void action(load);
   }, [required]);
   if (demo) return null;
-  if (firebaseEnabled)
-    return (
-      <section className="panel">
-        <h2>Kontosicherheit</h2>
-        <p>
-          Bestätigte E-Mail erforderlich. Nutze vorzugsweise Google mit
-          Zwei-Faktor-Schutz im Google-Konto. Firebase-Spark bietet hier keine
-          zusätzliche Authenticator-Einrichtung.
-        </p>
-      </section>
-    );
+  if (firebaseEnabled) return <FirebaseAccountSecurity />;
   return (
     <section className="panel account-security">
       <h2>{required ? "Zwei-Faktor-Anmeldung" : "Kontosicherheit"}</h2>
