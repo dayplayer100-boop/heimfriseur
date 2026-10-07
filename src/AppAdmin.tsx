@@ -1,3 +1,4 @@
+import { AdminUsers } from "./AdminUsers";
 import { useState } from "react";
 import { useStore } from "./store";
 import { Button, Input, Field } from "./ui";
@@ -62,6 +63,45 @@ export function AppAdminPanel({ compact = false }: { compact?: boolean }) {
       </Field>
       {!compact && (
         <>
+          <AdminUsers />
+          <h3>Unternehmen administrieren</h3>
+          <p>
+            Nach der Auswahl kannst du Einrichtungen, Kunden, Preise, Termine,
+            Teamrechte und Auswertungen des Unternehmens vollständig bearbeiten.
+            Wünsche findest du unter Einstellungen → Rückmeldungen.
+          </p>
+          {team && (
+            <div className="button-row">
+              <Button
+                onClick={() => {
+                  location.hash = "facilities";
+                }}
+              >
+                Einrichtungen
+              </Button>
+              <Button
+                onClick={() => {
+                  location.hash = "customers";
+                }}
+              >
+                Kunden
+              </Button>
+              <Button
+                onClick={() => {
+                  location.hash = "calendar";
+                }}
+              >
+                Termine
+              </Button>
+              <Button
+                onClick={() => {
+                  location.hash = "reports";
+                }}
+              >
+                Auswertung
+              </Button>
+            </div>
+          )}
           <h3>App-Admin-Zugänge</h3>
           <p>
             Diese Personen können alle Unternehmen verwalten. Der
@@ -103,7 +143,7 @@ export function AppAdminPanel({ compact = false }: { compact?: boolean }) {
               </div>
               <Button
                 variant="secondary"
-                disabled={busy}
+                disabled={busy || a.user_id === user?.id}
                 onClick={async () => {
                   if (
                     !window.confirm(
@@ -124,27 +164,26 @@ export function AppAdminPanel({ compact = false }: { compact?: boolean }) {
               </Button>
             </div>
           ))}
-          <h3>App-Änderungen · Version 6.0</h3>
-          <p>
-            Mein Arbeitstag, Wochenplanung, einmalige Terminänderungen,
-            Zahlungsübersicht und gemeinsame Versionsprüfung für Website und
-            App.
-          </p>
           <h3>Admin-Protokoll</h3>
           {(appAdmin.audit || []).map((a) => (
             <div className="audit-row" key={a.id}>
               <strong>
-                {a.action === "business_opened"
-                  ? "Unternehmen geöffnet"
-                  : a.action === "data_changed"
-                    ? a.details.operation === "DELETE"
-                      ? "Datensatz gelöscht"
-                      : a.details.operation === "INSERT"
-                        ? "Datensatz angelegt"
-                        : "Datensatz bearbeitet"
-                    : a.action === "admin_access_changed"
-                      ? "Admin-Zugang geändert"
-                      : "App-Admin eingerichtet"}
+                {a.action === "business_role_changed"
+                  ? "Benutzerrolle geändert"
+                  : a.action === "business_owner_transferred"
+                    ? "Geschäftsführer gewechselt"
+                    : a.action === "business_opened" ||
+                        a.action === "business_access"
+                      ? "Unternehmen geöffnet"
+                      : a.action === "data_changed"
+                        ? a.details.operation === "DELETE"
+                          ? "Datensatz gelöscht"
+                          : a.details.operation === "INSERT"
+                            ? "Datensatz angelegt"
+                            : "Datensatz bearbeitet"
+                        : a.action === "admin_access_changed"
+                          ? "Admin-Zugang geändert"
+                          : "App-Admin eingerichtet"}
               </strong>
               <p>
                 {dateLabel(a.created_at)} ·{" "}
@@ -162,6 +201,20 @@ export function AppAdminPanel({ compact = false }: { compact?: boolean }) {
                   ? ` · ${tableNames[String(a.details.table)] || "Daten"}`
                   : ""}
               </p>
+              {a.details.target_user_id && (
+                <p>
+                  Benutzer:{" "}
+                  {appAdmin.users?.find(
+                    (u) => u.uid === a.details.target_user_id,
+                  )?.email ||
+                    admins.find((u) => u.user_id === a.details.target_user_id)
+                      ?.email ||
+                    "Registriertes Konto"}
+                  {a.details.role
+                    ? ` · ${a.details.role === "owner" ? "Geschäftsführer" : "Mitarbeiter"}`
+                    : ""}
+                </p>
+              )}
             </div>
           ))}
         </>

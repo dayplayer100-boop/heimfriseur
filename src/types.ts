@@ -266,6 +266,12 @@ export interface TeamContext {
 }
 
 export interface AppAdminContext {
+  users?: {
+    uid: string;
+    email: string;
+    display_name: string;
+    business_id: string | null;
+  }[];
   is_admin: boolean;
   selected_business_id?: string | null;
   businesses?: {

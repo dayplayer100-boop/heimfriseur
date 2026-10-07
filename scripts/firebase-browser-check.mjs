@@ -1,5 +1,4 @@
 import { chromium } from "playwright";
-import { readFileSync, writeFileSync } from "node:fs";
 const url = process.env.FIREBASE_APP_URL || "http://localhost:5174";
 const browser = await chromium.launch({
   headless: true,
@@ -82,9 +81,75 @@ try {
     throw Error("No real Firestore business created");
   await page.reload();
   await page.getByRole("heading", { name: /Guten/ }).waitFor();
+  // Admin fixture is written only to the local demo emulator, never production.
+  if (
+    await page
+      .getByRole("heading", { name: "Benutzer & Rollen", exact: true })
+      .count()
+  )
+    throw Error("Director received administrator UI");
+  async function seed(path, fields) {
+    const r = await fetch(
+      `http://127.0.0.1:8080/v1/projects/demo-heimfriseur/databases/(default)/documents/${path}`,
+      {
+        method: "PATCH",
+        headers: {
+          authorization: "Bearer owner",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ fields }),
+      },
+    );
+    if (!r.ok) throw Error(`Emulator fixture failed: ${r.status}`);
+  }
+  await seed(`hf_admins/${session.uid}`, {
+    email: { stringValue: email },
+    is_active: { booleanValue: true },
+  });
+  await seed("hf_users/browser-colleague", {
+    uid: { stringValue: "browser-colleague" },
+    email: { stringValue: "colleague@test.invalid" },
+    display_name: { stringValue: "Browser Kollegin" },
+    updated_at: { stringValue: new Date().toISOString() },
+  });
+  await seed("hf_accounts/browser-colleague", {
+    business_id: { stringValue: session.uid },
+  });
+  await page.reload();
+  await page
+    .getByRole("heading", { name: "Benutzer & Rollen", exact: true })
+    .waitFor();
+  await page
+    .getByText("Browser Kollegin", { exact: true })
+    .locator("../..")
+    .getByRole("button", { name: "Rolle ändern", exact: true })
+    .click();
+  await page.getByLabel("Neue Rolle").selectOption("admin");
+  page.once("dialog", (d) => d.accept());
+  await page
+    .getByRole("button", { name: "Rolle speichern", exact: true })
+    .click();
+  await page
+    .getByText("Rolle gespeichert. Die Person muss ihre App neu laden.", {
+      exact: true,
+    })
+    .waitFor();
+  await page
+    .getByText("Browser Kollegin", { exact: true })
+    .locator("..")
+    .getByText("Admin ·", { exact: false })
+    .waitFor();
+  await page.screenshot({
+    path: "/tmp/heim-firebase-admin.png",
+    fullPage: true,
+  });
+  if (
+    await page.locator("body").evaluate((b) => b.scrollWidth > innerWidth + 1)
+  )
+    throw Error("Admin mobile horizontal overflow");
   if (errors.length) throw Error(errors.join("\n"));
   console.log(
-    "PASS: mobile Firebase registration, genuine emulated verification email, owner initialization, persistence after reload, no overflow",
+    "PASS: mobile Firebase registration, genuine emulated verification email, owner initialization, persistence after reload, admin-only user management and actual role save, no overflow",
   );
 } catch (e) {
   await page.screenshot({

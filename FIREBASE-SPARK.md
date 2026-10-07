@@ -1,6 +1,6 @@
 # HeimFriseur: getrennte Firebase-Testversion, ohne Zahlungskonto
 
-Stand: Version 6.2. Die bisherige Supabase-App bleibt bestehen. Der Firebase-Build
+Stand: Version 6.3. Die bisherige Supabase-App bleibt bestehen. Der Firebase-Build
 nutzt Firebase Authentication und Firestore Standard im Spark-Tarif, ohne Cloud
 Functions, Cloud SQL, Cloud Storage, Extensions oder Zahlungskonto. Das Projekt
 ist `heimfriseur-dayplayer100`. Die Test-Hosting-Site heißt
@@ -43,10 +43,10 @@ ist `heimfriseur-dayplayer100`. Die Test-Hosting-Site heißt
 2. **Separate Daten und Anmeldung.** Änderungen in der Testversion werden nicht
    automatisch nach Supabase kopiert. Supabase-Passwörter und Authenticator-Schlüssel
    werden nicht exportiert. Firebase-Konten werden neu registriert/bestätigt.
-3. **App-Admins werden im Spark-Aufbau ausschließlich durch den Betreiber in der
-   Firebase-Konsole eingerichtet.** Das Browser-Frontend kann diese Registrierung
-   nicht verändern. Die übrigen Firmen-, Kunden- und Mitarbeiterrechte bleiben
-   innerhalb des geschäftlichen Bereichs bedienbar.
+3. **Der erste App-Admin wird durch den Betreiber eingerichtet.** Ab Version 6.3
+   können ausschließlich bestehende App-Admins weitere bestätigte Konten über die
+   App ernennen. Geschäftsführer und Mitarbeiter dürfen die Registrierung nicht
+   verändern. Admin-Änderungen werden protokolliert.
 4. **Keine garantierte unbegrenzte kostenlose Produktion.** Spark hat Tages- und
    Speichergrenzen. Werden sie erreicht, können Aktionen bis zur Kontingenterneuerung
    ausfallen. Kein automatisches Upgrade und keine kostenpflichtigen Dienste.
@@ -142,8 +142,9 @@ Authentication → Nutzer dessen **Firebase-UID** kopieren. In Firestore ein Dok
 `hf_admins/FIREBASE_UID` mit `is_active` als Boolean `true` und `email` als String
 anlegen. Zugriff ausschließlich für die verifizierte UID, keine Rollenprüfung
 anhand einer im Browser angegebenen E-Mail. Niemals Service-Account-Schlüssel
-in Frontend oder Repository legen. Andere Admin-UIDs ebenso ausschließlich im
-Betreiber-Dashboard pflegen. Das Firmenkonto von T-cut bleibt davon getrennt.
+in Frontend oder Repository legen. Weitere Admin-Zugänge können ab Version 6.3
+auch durch einen vorhandenen App-Admin in der App verwaltet werden. Das Firmenkonto
+von T-cut bleibt davon getrennt.
 
 ## Daten aus Supabase übernehmen
 
@@ -236,3 +237,20 @@ node scripts/firebase-transfer-owner.mjs --project heimfriseur-dayplayer100 --fr
 ```
 
 Der bisherige Firmeninhaber muss bereits geschützter App-Admin sein. Die Übernahme ermittelt die Konto-IDs serverseitig, überträgt bestehende Unternehmens-/Datensatzzuordnungen in einer einzigen Transaktion und entfernt das Admin-Konto aus der Firmenmitgliederliste. Historische Bearbeiter und Finanzwerte bleiben erhalten. Ein automatisch erzeugtes leeres Unternehmen des neuen Geschäftsführers wird bereinigt; bei echten Daten, Kollegen oder Einladungen in dieser zweiten Firma bricht das Werkzeug ab. Laufende Behandlungen zuerst beenden. Große Unternehmen oberhalb der Einzeltransaktionsgrenze werden nicht teilweise übertragen. Eine Wiederholung nach erfolgreicher Übernahme ist ohne weitere Änderungen möglich. Die App zeigt Plattformzugriff als „Admin“ und die tatsächliche Firmenrolle als „Geschäftsführer“.
+
+## 6.3: Benutzerverwaltung durch App-Admins
+
+Unter **Einstellungen → App-Admin → Benutzer & Rollen** kann ein bestehender App-Admin bestätigte Benutzer zu App-Admins ernennen oder innerhalb ihres Unternehmens zwischen Mitarbeiter und Geschäftsführer wechseln. Die globale Admin-Rolle ist unabhängig vom Unternehmenseigentümer. Geschäftsführer und Mitarbeiter haben weder Zugriff auf dieses Verzeichnis noch auf die Rollenverwaltung. Der eigene Admin-Zugang kann nicht deaktiviert oder herabgestuft werden.
+
+Bestätigte Benutzer tragen beim nächsten Login ausschließlich ihre eigene UID, E-Mail und ihren Anzeigenamen in `hf_users` ein. Dieses Verzeichnis verleiht keine Rechte. Für bereits registrierte Konten ist daher nach dem Update eine erneute Anmeldung erforderlich, bevor sie in der Verwaltung auftauchen. Die erste Einrichtung eines App-Admins bleibt eine Betreiberaktion; anschließend sind weitere Admin-Zugänge über die App möglich.
+
+Geschäftsführerwechsel erfolgen atomar, revisionsgeprüft und mit Admin-Protokoll. Die bisherige Geschäftsführung wird Mitarbeiter; falls das bisherige Konto bereits App-Admin ist, wird seine Unternehmensmitgliedschaft entfernt und der Plattformzugang bleibt erhalten. Historische Leistungen, Finanzdaten und Kunden werden erhalten. Laufende Behandlungen müssen vorher abgeschlossen werden. Konten mit einer anderen Unternehmenszuordnung werden nicht automatisch verschoben. Für eine solche Übertragung bleibt das gesonderte, geprüfte Betreiberverfahren erforderlich. Übertragungen über 300 operative/Abrechnungsdokumente werden ebenfalls nicht automatisch ausgeführt.
+
+**Bereitstellung:** Auch die neuen Sicherheitsregeln veröffentlichen, bevor die neue App verwendet wird:
+
+```bash
+npm run build:firebase
+npx --yes --package firebase-tools@15.32.1 firebase deploy --only firestore:rules,hosting --config firebase.parallel.json --project heimfriseur-dayplayer100
+```
+
+Nur die parallele Test-Site ist betroffen, wenn in `firebase.parallel.json` die eigene Test-Site `heimfriseur-test-237368331242` eingetragen ist. Supabase und die ursprüngliche Hosting-Konfiguration bleiben bestehen. Plattform-Quellcode, Google-Cloud-IAM und Auth-Konten löschen/Passwörter ändern sind weiterhin Betreiberaufgaben; App-Admins verwalten die Geschäftsdaten und App-Rollen.

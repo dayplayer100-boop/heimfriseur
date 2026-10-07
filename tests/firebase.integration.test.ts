@@ -7,6 +7,10 @@ import {
   doc,
   setDoc,
   writeBatch,
+  getDoc,
+  getDocs,
+  collection,
+  updateDoc,
   type Firestore,
 } from "firebase/firestore";
 import { readFileSync } from "node:fs";
@@ -281,5 +285,90 @@ suite("Firebase Spark real transaction workflows", () => {
     expect((await owner.snapshot()).data.facilities[0].name).toBe(
       "Vom App-Admin bearbeitet",
     );
+    const { changeFirebaseAdmin, changeFirebaseBusinessRole } =
+      await import("../src/firebaseAdministration");
+    const workerEmail = "employee@test.invalid";
+    // Directory metadata never grants authority. Only the verified user may
+    // publish their own identity; directors and employees cannot list it.
+    await setDoc(doc(workerDb, "hf_users", "employee"), {
+      uid: "employee",
+      email: workerEmail,
+      display_name: "Team",
+      updated_at: new Date().toISOString(),
+    });
+    await expect(
+      setDoc(doc(workerDb, "hf_users", "somebody-else"), {
+        uid: "somebody-else",
+        email: workerEmail,
+        display_name: "Forged",
+      }),
+    ).rejects.toBeTruthy();
+    await expect(
+      getDocs(collection(workerDb, "hf_users")),
+    ).rejects.toBeTruthy();
+    await expect(
+      changeFirebaseAdmin(workerDb, "employee", workerEmail, true),
+    ).rejects.toBeTruthy();
+    await changeFirebaseAdmin(adminDb, "platform-admin", workerEmail, true);
+    expect(
+      (await getDoc(doc(adminDb, "hf_admins", "employee"))).data()?.is_active,
+    ).toBe(true);
+    await expect(
+      changeFirebaseAdmin(workerDb, "employee", workerEmail, false),
+    ).rejects.toThrow("eigenen Admin-Zugang");
+    // Server rules protect self-revocation even if the browser guard is bypassed.
+    const selfRevoke = writeBatch(workerDb);
+    selfRevoke.set(doc(workerDb, "hf_admin_audit", "self-revoke"), {
+      actor_id: "employee",
+      action: "admin_access_changed",
+      business_id: null,
+      created_at: new Date().toISOString(),
+      details: { target_user_id: "employee" },
+    });
+    selfRevoke.set(doc(workerDb, "hf_admins", "employee"), {
+      email: workerEmail,
+      is_active: false,
+      updated_at: new Date().toISOString(),
+      audit_id: "self-revoke",
+    });
+    await expect(selfRevoke.commit()).rejects.toBeTruthy();
+    await changeFirebaseAdmin(adminDb, "platform-admin", workerEmail, false);
+    await expect(
+      updateDoc(
+        doc(workerDb, "hf_businesses", "owner", "members", "employee"),
+        { role: "owner" },
+      ),
+    ).rejects.toBeTruthy();
+    await changeFirebaseBusinessRole(
+      adminDb,
+      "platform-admin",
+      "employee",
+      "owner",
+      "owner",
+    );
+    expect(
+      (await getDoc(doc(adminDb, "hf_businesses", "owner"))).data()
+        ?.owner_user_id,
+    ).toBe("employee");
+    expect(
+      (
+        await getDoc(doc(adminDb, "hf_businesses", "owner", "members", "owner"))
+      ).data()?.role,
+    ).toBe("employee");
+    const transferred = await worker.snapshot();
+    expect(transferred.data.treatments[0].total_price).toBe(31);
+    expect(transferred.data.facilities[0].user_id).toBe("employee");
+    await expect(
+      changeFirebaseBusinessRole(
+        adminDb,
+        "platform-admin",
+        "employee",
+        "owner",
+        "employee",
+      ),
+    ).rejects.toThrow("zuerst einen anderen Geschäftsführer");
+    expect(
+      (await getDocs(collection(adminDb, "hf_admin_audit"))).size,
+    ).toBeGreaterThanOrEqual(3);
   }, 60000);
 });

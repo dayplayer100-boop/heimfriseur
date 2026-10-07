@@ -1,4 +1,8 @@
 import {
+  changeFirebaseAdmin,
+  changeFirebaseBusinessRole,
+} from "./firebaseAdministration";
+import {
   splitFirebaseData,
   joinFirebaseData,
   assertFirebaseData,
@@ -685,6 +689,24 @@ function db() {
 export async function firebaseAdminContext(): Promise<AppAdminContext> {
   const database = db(),
     uid = firebaseAuth!.currentUser!.uid;
+  const directoryRef = doc(database, "hf_users", uid);
+  const directory = await getDocFromServer(directoryRef);
+  const signedUser = firebaseAuth!.currentUser!;
+  const email = signedUser.email!.trim().toLowerCase();
+  const display_name = signedUser.displayName || email;
+  if (
+    directory.data()?.email !== email ||
+    directory.data()?.display_name !== display_name
+  ) {
+    await runTransaction(database, async (tx) => {
+      tx.set(directoryRef, {
+        uid,
+        email,
+        display_name,
+        updated_at: new Date().toISOString(),
+      });
+    });
+  }
   const admin = await getDocFromServer(doc(database, "hf_admins", uid));
   if (!admin.data()?.is_active) return { is_admin: false };
   let selection = "";
@@ -711,13 +733,23 @@ export async function firebaseAdminContext(): Promise<AppAdminContext> {
   if (selection && !businesses?.some((b) => b.id === selection)) selection = "";
   const audit = (
     await getDocsFromServer(collection(database, "hf_admin_audit"))
-  ).docs.map((d) => d.data()) as AppAdminContext["audit"];
+  ).docs.map((d) => ({ id: d.id, ...d.data() })) as AppAdminContext["audit"];
+  const accounts = await getDocsFromServer(collection(database, "hf_accounts"));
+  const users = (
+    await getDocsFromServer(collection(database, "hf_users"))
+  ).docs.map((d) => ({
+    uid: d.id,
+    ...d.data(),
+    business_id:
+      accounts.docs.find((a) => a.id === d.id)?.data().business_id || null,
+  })) as AppAdminContext["users"];
   return {
     is_admin: true,
     selected_business_id: selection || null,
     businesses,
     admins,
-    audit,
+    users,
+    audit: audit?.sort((a, b) => b.created_at.localeCompare(a.created_at)),
   };
 }
 export async function firebaseInitialize() {
@@ -848,15 +880,38 @@ export async function firebaseRpc(action: string, p: Json = {}) {
       currentRepository = null;
       return null;
     }
-    if (["set_app_admin", "audit_admin_business_access"].includes(action)) {
+    if (
+      [
+        "set_app_admin",
+        "set_admin_business_role",
+        "audit_admin_business_access",
+      ].includes(action)
+    ) {
       const database = db(),
         user = firebaseAuth!.currentUser!,
         ctx = await firebaseAdminContext();
       if (!ctx.is_admin) throw { code: "42501" };
-      if (action === "set_app_admin")
-        throw Error(
-          "App-Admins werden aus Sicherheitsgründen in der Firebase-Konsole anhand ihrer UID eingerichtet.",
+      if (action === "set_app_admin") {
+        await changeFirebaseAdmin(
+          database,
+          user.uid,
+          String(p.p_email || ""),
+          p.p_active === true,
         );
+        currentRepository = null;
+        return null;
+      }
+      if (action === "set_admin_business_role") {
+        await changeFirebaseBusinessRole(
+          database,
+          user.uid,
+          String(p.p_user || ""),
+          String(p.p_business || ""),
+          p.p_role,
+        );
+        currentRepository = null;
+        return null;
+      }
       await runTransaction(database, async (tx) => {
         tx.set(doc(collection(database, "hf_admin_audit")), {
           actor_id: user.uid,
