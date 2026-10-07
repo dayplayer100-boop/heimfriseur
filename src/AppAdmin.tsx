@@ -175,22 +175,24 @@ export function AppAdminPanel({ compact = false }: { compact?: boolean }) {
           {(appAdmin.audit || []).map((a) => (
             <div className="audit-row" key={a.id}>
               <strong>
-                {a.action === "business_role_changed"
-                  ? "Benutzerrolle geändert"
-                  : a.action === "business_owner_transferred"
-                    ? "Geschäftsführer gewechselt"
-                    : a.action === "business_opened" ||
-                        a.action === "business_access"
-                      ? "Unternehmen geöffnet"
-                      : a.action === "data_changed"
-                        ? a.details.operation === "DELETE"
-                          ? "Datensatz gelöscht"
-                          : a.details.operation === "INSERT"
-                            ? "Datensatz angelegt"
-                            : "Datensatz bearbeitet"
-                        : a.action === "admin_access_changed"
-                          ? "Admin-Zugang geändert"
-                          : "App-Admin eingerichtet"}
+                {a.action === "admin_business_assigned"
+                  ? "Admin-Unternehmen zugeordnet"
+                  : a.action === "business_role_changed"
+                    ? "Benutzerrolle geändert"
+                    : a.action === "business_owner_transferred"
+                      ? "Geschäftsführer gewechselt"
+                      : a.action === "business_opened" ||
+                          a.action === "business_access"
+                        ? "Unternehmen geöffnet"
+                        : a.action === "data_changed"
+                          ? a.details.operation === "DELETE"
+                            ? "Datensatz gelöscht"
+                            : a.details.operation === "INSERT"
+                              ? "Datensatz angelegt"
+                              : "Datensatz bearbeitet"
+                          : a.action === "admin_access_changed"
+                            ? "Admin-Zugang geändert"
+                            : "App-Admin eingerichtet"}
               </strong>
               <p>
                 {dateLabel(a.created_at)} ·{" "}

@@ -272,3 +272,15 @@ node scripts/firebase-grant-admin.mjs --email dayplayer100@live.de --project hei
 ```
 
 Der Befehl prüft das bestätigte Firebase-Konto und erhält die Geschäftsführerzuordnung von T-cut sowie sämtliche Geschäftsdaten. Er ist bei einem bloß gespeicherten Einladungslink nicht erforderlich: Dort reicht die aktualisierte App oder vorläufig „Einladung verlassen“.
+
+## 6.3.2: App-Ersteller direkt im bestehenden Unternehmen
+
+Das Betreiberwerkzeug `firebase-assign-admin-company.mjs` ist für den Fall gedacht, dass der Geschäftsführer bereits seine eigene Firma hat und der Plattform-Admin zusätzlich eine eigene, nicht benötigte Firma angelegt hat. Es erhält die bestehende Geschäftsführung, setzt das Standardunternehmen in der geschützten Admin-Registry, ordnet den Admin-Account diesem Unternehmen zu und entfernt eine gegebenenfalls vorhandene Unternehmensmitgliedschaft des Admins. Der Admin-Zugang funktioniert ausschließlich über Plattformrechte.
+
+```bash
+node scripts/firebase-assign-admin-company.mjs --project heimfriseur-dayplayer100 --from-admin dayplayer100@live.de --to-owner t-cut@web.de
+```
+
+Beide Identitäten werden über bestätigte Firebase-Konten nachgeschlagen. Die Geschäftsführerrolle des Zielkontos muss vorhanden und aktiv sein. Eine zusätzliche, ausschließlich vom Admin gehaltene Firma wird mit `_archived: true` stillgelegt und hat anschließend keinen aktiven Geschäftsführer. Ihre Kunden-, Behandlungs-, Abrechnungs- und Finanzdokumente werden nicht gelöscht oder in T-cuts Firma gemischt. Die Sicherheitsregeln sperren den Geschäftszugriff auf stillgelegte Firmen; die App blendet sie aus der Liste aktiver Firmen aus. Ein Betreiber kann die Sicherung mit IAM wiederherstellen. Bei weiteren Teammitgliedern oder laufenden Behandlungen wird vor jeder Änderung abgebrochen. Der gesamte Vorgang erfolgt in einem Commit mit Revisions-/Dokumentprüfungen und Admin-Protokoll; Wiederholung ist ohne zusätzliche Änderungen möglich.
+
+Nach Veröffentlichung der aktuellen Regeln und der App öffnet der Admin bei fehlender oder veralteter Auswahl automatisch sein hinterlegtes Standardunternehmen. Dafür werden keine Rollen aus E-Mail-Namen, lokalen Einstellungen oder Profilfeldern abgeleitet. Ein bestehender Admin kann weiterhin ausdrücklich andere aktive Firmen auswählen, sofern solche vorhanden sind.

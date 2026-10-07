@@ -313,3 +313,88 @@ if (!repeat.includes("bereits Geschäftsführer"))
 console.log(
   "PASS: safe atomic owner transfer, no target data loss, independent admin, preserved financial history and idempotency",
 );
+
+// The creator must manage the existing director firm without a company role.
+const extraPath = `${documents}/hf_businesses/extra-admin-company`;
+await commit([
+  document(extraPath, {
+    owner_user_id: user.localId,
+    owner_email: email,
+    name: "Extra admin company",
+  }),
+  document(extraPath + "/state/revision", { value: 0 }),
+  document(extraPath + `/members/${user.localId}`, {
+    id: user.localId,
+    user_id: user.localId,
+    role: "owner",
+    is_active: true,
+  }),
+  document(extraPath + "/records/customers~preserved", {
+    id: "preserved",
+    _table: "customers",
+    user_id: user.localId,
+  }),
+  document(extraPath + "/finance/preserved", {
+    completed: true,
+    total_price: 28,
+  }),
+  document(`${documents}/hf_accounts/${user.localId}`, {
+    business_id: "extra-admin-company",
+  }),
+]);
+const assignArgs = [
+  "scripts/firebase-assign-admin-company.mjs",
+  "--project",
+  project,
+  "--from-admin",
+  email,
+  "--to-owner",
+  successorEmail,
+  "--emulator",
+];
+const assigned = execFileSync(process.execPath, assignArgs, {
+  encoding: "utf8",
+});
+if (!assigned.includes("ausschließlich App-Admin"))
+  throw Error("Admin-only assignment failed");
+if (
+  (await getDocument(sourcePath)).fields.owner_user_id.stringValue !==
+  successor.localId
+)
+  throw Error("Director changed during admin assignment");
+if (
+  (await getDocument(`${documents}/hf_admins/${user.localId}`)).fields
+    .default_business_id.stringValue !== sourcePath.split("/").at(-1)
+)
+  throw Error("Default business missing");
+if (
+  (await getDocument(`${documents}/hf_accounts/${user.localId}`)).fields
+    .business_id.stringValue !== sourcePath.split("/").at(-1)
+)
+  throw Error("Wrong admin account business");
+if (
+  (await getDocument(sourcePath + `/members/${user.localId}`)).error?.code !==
+  404
+)
+  throw Error("Admin added as director or employee");
+const archive = await getDocument(extraPath);
+if (
+  !archive.fields._archived.booleanValue ||
+  archive.fields.owner_user_id.nullValue !== null
+)
+  throw Error("Extra admin ownership retained");
+if (
+  (await getDocument(extraPath + "/records/customers~preserved")).fields.id
+    .stringValue !== "preserved" ||
+  (await getDocument(extraPath + "/finance/preserved")).fields.total_price
+    .integerValue !== "28"
+)
+  throw Error("Archive lost records or finance");
+const repeatAssignment = execFileSync(process.execPath, assignArgs, {
+  encoding: "utf8",
+});
+if (!repeatAssignment.includes("bereits ausschließlich App-Admin"))
+  throw Error("Admin company assignment not idempotent");
+console.log(
+  "PASS: admin directly assigned to existing director company without membership; extra company archived, records preserved, idempotent",
+);

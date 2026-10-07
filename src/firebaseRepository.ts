@@ -94,6 +94,10 @@ export class FirebaseRepository {
     ]);
     if (!b.exists()) throw Error("Unternehmen nicht gefunden.");
     const business = b.data();
+    if (business._archived === true)
+      throw Error(
+        "Dieses zusätzliche Unternehmen wurde stillgelegt. Bitte das aktive Unternehmen öffnen.",
+      );
     if (business._migration_state === "in_progress")
       throw Error(
         "Die Datenübertragung läuft noch. Bitte den Betreiber informieren und später erneut versuchen.",
@@ -767,10 +771,12 @@ export async function firebaseAdminContext(): Promise<AppAdminContext> {
   }
   const businesses = (
     await getDocsFromServer(collection(database, "hf_businesses"))
-  ).docs.map((d) => ({
-    id: d.id,
-    ...d.data(),
-  })) as AppAdminContext["businesses"];
+  ).docs
+    .filter((d) => d.data()._archived !== true)
+    .map((d) => ({
+      id: d.id,
+      ...d.data(),
+    })) as AppAdminContext["businesses"];
   const admins = (
     await getDocsFromServer(collection(database, "hf_admins"))
   ).docs.map((d) => ({
@@ -778,6 +784,9 @@ export async function firebaseAdminContext(): Promise<AppAdminContext> {
     ...d.data(),
   })) as AppAdminContext["admins"];
   if (selection && !businesses?.some((b) => b.id === selection)) selection = "";
+  const preferred = admin.data()?.default_business_id;
+  if (!selection && businesses?.some((b) => b.id === preferred))
+    selection = preferred;
   const audit = (
     await getDocsFromServer(collection(database, "hf_admin_audit"))
   ).docs.map((d) => ({ id: d.id, ...d.data() })) as AppAdminContext["audit"];

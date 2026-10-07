@@ -227,9 +227,43 @@ try {
     .waitFor();
   if (await page.evaluate(() => sessionStorage.getItem("heimfriseur-invite")))
     throw Error("Stale invitation still blocks the administrator");
+  // Administrator home is a protected registry preference, not company ownership.
+  await seed(`hf_admins/${session.uid}`, {
+    email: { stringValue: email },
+    is_active: { booleanValue: true },
+    default_business_id: { stringValue: session.uid },
+  });
+  await seed("hf_businesses/archived-extra", {
+    name: { stringValue: "Old admin firm" },
+    owner_user_id: { nullValue: null },
+    owner_email: { stringValue: "" },
+    _archived: { booleanValue: true },
+  });
+  await page.evaluate(
+    (uid) =>
+      sessionStorage.setItem(
+        "heimfriseur-admin-business",
+        JSON.stringify({ userId: uid, businessId: "archived-extra" }),
+      ),
+    session.uid,
+  );
+  await page.goto(url + "/#dashboard");
+  await page.reload();
+  await page.getByRole("heading", { name: /Guten/ }).waitFor();
+  const home = await page.evaluate(async () => {
+    const { firebaseAdminContext } = await import("/src/firebaseRepository.ts");
+    return firebaseAdminContext();
+  });
+  if (
+    home.selected_business_id !== session.uid ||
+    home.businesses.some((b) => b.id === "archived-extra")
+  )
+    throw Error(
+      "Admin did not enter preferred company or archive remained active",
+    );
   if (errors.length) throw Error(errors.join("\n"));
   console.log(
-    "PASS: mobile Firebase registration, genuine emulated verification email, owner initialization, persistence after reload, admin-only user management, actual role save, stale invitation recovery, linked Google/password identity, no overflow",
+    "PASS: mobile Firebase registration, genuine emulated verification email, owner initialization, persistence after reload, admin-only user management, actual role save, stale invitation recovery, linked Google/password identity, direct preferred company entry without archived duplicates, no overflow",
   );
 } catch (e) {
   await page.screenshot({

@@ -453,5 +453,32 @@ suite("Firebase Spark real transaction workflows", () => {
     expect(
       (await getDocs(collection(adminDb, "hf_admin_audit"))).size,
     ).toBeGreaterThanOrEqual(3);
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), "hf_businesses", "archived"), {
+        owner_user_id: "owner",
+        _archived: true,
+      });
+      await setDoc(
+        doc(
+          ctx.firestore(),
+          "hf_businesses",
+          "archived",
+          "records",
+          "customers~kept",
+        ),
+        {
+          id: "kept",
+          business_id: "archived",
+          user_id: "owner",
+          _table: "customers",
+          _facility_id: "",
+        },
+      );
+    });
+    await expect(
+      getDoc(
+        doc(adminDb, "hf_businesses", "archived", "records", "customers~kept"),
+      ),
+    ).rejects.toBeTruthy();
   }, 60000);
 });

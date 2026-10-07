@@ -33,7 +33,7 @@ export async function changeFirebaseAdmin(
   await runTransaction(db, async (tx) => {
     const authority = await tx.get(doc(db, "hf_admins", actor));
     const target = await tx.get(doc(db, "hf_users", uid));
-    await tx.get(doc(db, "hf_admins", uid));
+    const previousRegistry = await tx.get(doc(db, "hf_admins", uid));
     if (!authority.data()?.is_active || !target.exists())
       throw Error("Nur aktive App-Admins dürfen diese Änderung durchführen.");
     const audit = doc(collection(db, "hf_admin_audit"));
@@ -42,6 +42,9 @@ export async function changeFirebaseAdmin(
       is_active: active,
       updated_at: new Date().toISOString(),
       audit_id: audit.id,
+      ...(previousRegistry.data()?.default_business_id
+        ? { default_business_id: previousRegistry.data()!.default_business_id }
+        : {}),
     });
     tx.set(audit, {
       actor_id: actor,

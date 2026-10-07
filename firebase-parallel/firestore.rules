@@ -3,22 +3,22 @@ service cloud.firestore {
   match /databases/{database}/documents {
     function signed() { return request.auth != null && request.auth.token.email_verified == true; }
     function admin() { return signed() && exists(/databases/$(database)/documents/hf_admins/$(request.auth.uid)) && get(/databases/$(database)/documents/hf_admins/$(request.auth.uid)).data.is_active == true; }
-    function owner(b) { return signed() && (exists(/databases/$(database)/documents/hf_businesses/$(b)) ? (get(/databases/$(database)/documents/hf_businesses/$(b)).data.get('_migration_state','complete') != 'in_progress' && (get(/databases/$(database)/documents/hf_businesses/$(b)).data.owner_user_id == request.auth.uid || admin())) : false); }
+    function owner(b) { return signed() && (exists(/databases/$(database)/documents/hf_businesses/$(b)) ? (get(/databases/$(database)/documents/hf_businesses/$(b)).data.get('_migration_state','complete') != 'in_progress' && get(/databases/$(database)/documents/hf_businesses/$(b)).data.get('_archived',false) != true && (get(/databases/$(database)/documents/hf_businesses/$(b)).data.owner_user_id == request.auth.uid || admin())) : false); }
     function member(b) { return get(/databases/$(database)/documents/hf_businesses/$(b)/members/$(request.auth.uid)).data; }
-    function active(b) { return signed() && get(/databases/$(database)/documents/hf_businesses/$(b)).data.get('_migration_state','complete') != 'in_progress' && (exists(/databases/$(database)/documents/hf_businesses/$(b)/members/$(request.auth.uid)) ? (member(b).is_active == true || admin()) : admin()); }
-    function permission(b, key) { return signed() && get(/databases/$(database)/documents/hf_businesses/$(b)).data.get('_migration_state','complete') != 'in_progress' && member(b).is_active == true && (member(b).role == 'owner' || member(b).permissions.get(key, key in ['record_payments','close_visits']) == true); }
+    function active(b) { return signed() && get(/databases/$(database)/documents/hf_businesses/$(b)).data.get('_migration_state','complete') != 'in_progress' && get(/databases/$(database)/documents/hf_businesses/$(b)).data.get('_archived',false) != true && (exists(/databases/$(database)/documents/hf_businesses/$(b)/members/$(request.auth.uid)) ? (member(b).is_active == true || admin()) : admin()); }
+    function permission(b, key) { return signed() && get(/databases/$(database)/documents/hf_businesses/$(b)).data.get('_migration_state','complete') != 'in_progress' && get(/databases/$(database)/documents/hf_businesses/$(b)).data.get('_archived',false) != true && member(b).is_active == true && (member(b).role == 'owner' || member(b).permissions.get(key, key in ['record_payments','close_visits']) == true); }
     function scope(b, facility) { return facility != '' && facility in member(b).get('facility_ids', []); }
     function rec(b,t,id) { return get(/databases/$(database)/documents/hf_businesses/$(b)/records/$(t + '~' + id)).data; }
     function after(b,t,id) { return getAfter(/databases/$(database)/documents/hf_businesses/$(b)/records/$(t + '~' + id)).data; }
     function assigned(b,id) { return request.auth.uid in rec(b,'appointments',id).assigned_users; }
     function invite(id) { return get(/databases/$(database)/documents/hf_invites/$(id)).data; }
-    function accepts(id,b) { let i = invite(id); return signed() && i.business_id == b && i.email == request.auth.token.email.lower() && i.accepted_at == null && i.revoked_at == null && i.expires_at_ms > request.time.toMillis() && getAfter(/databases/$(database)/documents/hf_invites/$(id)).data.accepted_by == request.auth.uid; }
+    function accepts(id,b) { let i = invite(id); return signed() && get(/databases/$(database)/documents/hf_businesses/$(b)).data.get('_archived',false) != true && i.business_id == b && i.email == request.auth.token.email.lower() && i.accepted_at == null && i.revoked_at == null && i.expires_at_ms > request.time.toMillis() && getAfter(/databases/$(database)/documents/hf_invites/$(id)).data.accepted_by == request.auth.uid; }
     match /hf_admins/{uid} {
       allow get: if signed() && (request.auth.uid == uid || admin());
       allow list: if admin();
       // Only an existing verified platform admin can change this registry.
       // Self-revocation is forbidden; every change requires an immutable audit.
-      allow create, update: if admin() && request.resource.data.keys().hasOnly(['email','is_active','updated_at','audit_id']) && request.resource.data.is_active is bool && (uid != request.auth.uid || request.resource.data.is_active == true) && request.resource.data.email == get(/databases/$(database)/documents/hf_users/$(uid)).data.email && getAfter(/databases/$(database)/documents/hf_admin_audit/$(request.resource.data.audit_id)).data.actor_id == request.auth.uid && getAfter(/databases/$(database)/documents/hf_admin_audit/$(request.resource.data.audit_id)).data.details.target_user_id == uid;
+      allow create, update: if admin() && request.resource.data.keys().hasOnly(['email','is_active','updated_at','audit_id','default_business_id']) && request.resource.data.is_active is bool && (uid != request.auth.uid || request.resource.data.is_active == true) && request.resource.data.email == get(/databases/$(database)/documents/hf_users/$(uid)).data.email && getAfter(/databases/$(database)/documents/hf_admin_audit/$(request.resource.data.audit_id)).data.actor_id == request.auth.uid && getAfter(/databases/$(database)/documents/hf_admin_audit/$(request.resource.data.audit_id)).data.details.target_user_id == uid;
       allow delete: if false;
     }
     match /hf_admin_audit/{id} {
@@ -74,7 +74,7 @@ service cloud.firestore {
       match /state/revision {
         allow read: if active(b);
         allow create: if signed() && b == request.auth.uid && getAfter(/databases/$(database)/documents/hf_businesses/$(b)).data.owner_user_id == request.auth.uid && request.resource.data.value == 0;
-        allow update: if signed() && (active(b) || getAfter(/databases/$(database)/documents/hf_businesses/$(b)/members/$(request.auth.uid)).data.is_active == true) && request.resource.data.keys().hasOnly(['value']) && request.resource.data.value == resource.data.value + 1;
+        allow update: if signed() && get(/databases/$(database)/documents/hf_businesses/$(b)).data.get('_archived',false) != true && (active(b) || getAfter(/databases/$(database)/documents/hf_businesses/$(b)/members/$(request.auth.uid)).data.is_active == true) && request.resource.data.keys().hasOnly(['value']) && request.resource.data.value == resource.data.value + 1;
         allow delete: if false;
       }
       match /catalogue/main {

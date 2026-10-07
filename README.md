@@ -1,4 +1,4 @@
-## Firebase Spark – getrennte Testversion 6.3.1
+## Firebase Spark – getrennte Testversion 6.3.2
 
 Dieser Branch `firebase-spark` enthält die parallele Firebase-Version: Firebase Auth (E-Mail/Google) und Firestore mit getrennten Finanzdaten und Unternehmensrechten. Kein Zahlungskonto, keine Cloud Functions. Die Supabase-Version und die bestehende Hosting-Adresse bleiben erhalten.
 
