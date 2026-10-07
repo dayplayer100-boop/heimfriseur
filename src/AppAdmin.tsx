@@ -201,7 +201,7 @@ export function AppAdminPanel({ compact = false }: { compact?: boolean }) {
                   ? ` · ${tableNames[String(a.details.table)] || "Daten"}`
                   : ""}
               </p>
-              {a.details.target_user_id && (
+              {Boolean(a.details.target_user_id) && (
                 <p>
                   Benutzer:{" "}
                   {appAdmin.users?.find(
