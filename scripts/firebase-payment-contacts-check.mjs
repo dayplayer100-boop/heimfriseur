@@ -100,6 +100,8 @@ const record = (table, id, extra = {}) => ({
 try {
   await seed(root, {
     name: "Fictitious fixture",
+    workflow_schema: 2,
+    finance_schema: 3,
     owner_user_id: "contact-owner",
     owner_email: "contact-owner@test.invalid",
   });

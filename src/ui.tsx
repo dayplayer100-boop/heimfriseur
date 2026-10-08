@@ -10,6 +10,8 @@ import {
 } from "lucide-react";
 import {
   cloneElement,
+  useEffect,
+  useRef,
   isValidElement,
   type ReactElement,
   type ReactNode,
@@ -92,10 +94,75 @@ export function Modal({
   children: ReactNode;
   onClose: () => void;
 }) {
+  const panel = useRef<HTMLElement>(null),
+    close = useRef(onClose);
+  close.current = onClose;
+  useEffect(() => {
+    const previous = document.activeElement as HTMLElement | null;
+    const overflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    panel.current?.focus();
+    const top = () =>
+      document
+        .querySelectorAll('[role="dialog"]')
+        .item(document.querySelectorAll('[role="dialog"]').length - 1) ===
+      panel.current;
+    const focusables = () =>
+      Array.from(
+        panel.current?.querySelectorAll<HTMLElement>(
+          'button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),a[href],[tabindex="0"]',
+        ) || [],
+      ).filter((e) => e.getClientRects().length > 0);
+    const key = (e: KeyboardEvent) => {
+      if (!top()) return;
+      if (e.key === "Escape") {
+        e.preventDefault();
+        close.current();
+      }
+      if (e.key !== "Tab") return;
+      const items = focusables(),
+        first = items[0],
+        last = items.at(-1);
+      if (!first) {
+        e.preventDefault();
+        panel.current?.focus();
+        return;
+      }
+      if (
+        e.shiftKey &&
+        (document.activeElement === first ||
+          document.activeElement === panel.current)
+      ) {
+        e.preventDefault();
+        last?.focus();
+      } else if (
+        !e.shiftKey &&
+        (document.activeElement === last ||
+          document.activeElement === panel.current)
+      ) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+    const keepFocus = (e: FocusEvent) => {
+      if (top() && !panel.current?.contains(e.target as Node))
+        panel.current?.focus();
+    };
+    document.addEventListener("keydown", key, true);
+    document.addEventListener("focusin", keepFocus);
+    return () => {
+      document.removeEventListener("keydown", key, true);
+      document.removeEventListener("focusin", keepFocus);
+      document.body.style.overflow = overflow;
+      if (previous?.isConnected) previous.focus();
+    };
+  }, []);
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <section
         className="modal"
+        ref={panel}
+        tabIndex={-1}
         role="dialog"
         aria-modal="true"
         aria-label={title}

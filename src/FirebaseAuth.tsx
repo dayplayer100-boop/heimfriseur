@@ -1,3 +1,4 @@
+import { ERROR_MESSAGES } from "./appErrors";
 import { authReturnUrl } from "./defaultServices";
 import { useEffect, useState } from "react";
 import {
@@ -20,6 +21,7 @@ import { Button, Input, formObject } from "./ui";
 import { useStore } from "./store";
 export function firebaseError(error: unknown) {
   const code = (error as { code?: string }).code;
+  if (code && ERROR_MESSAGES[code]) return ERROR_MESSAGES[code];
   if (
     [
       "auth/invalid-credential",

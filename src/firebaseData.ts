@@ -1,3 +1,5 @@
+import { eurosToCents, checkedCents } from "./money";
+import { visitShard, treatmentTimes } from "./firebaseWorkflow";
 import { emptyData, type Data, type Table } from "./types";
 type Json = Record<string, any>;
 const tables = Object.keys(emptyData()) as Table[];
@@ -40,7 +42,28 @@ export function splitFirebaseData(
         _table: table,
         _facility_id: facility(table, row),
       };
+      if (table === "services" || table === "facility_service_prices") {
+        out.price_cents = eurosToCents(out.price);
+        delete out.price;
+      }
+      if (table === "appointments") {
+        const times = out.actual_start_time
+          ? treatmentTimes(out.actual_start_time, out.actual_end_time ?? null)
+          : { start_ms: null, end_ms: null };
+        if (!out.actual_start_time && out.actual_end_time)
+          throw Error("Besuchsende ohne Beginn.");
+        out.actual_start_ms = times.start_ms;
+        out.actual_end_ms = times.end_ms;
+        delete out.actual_start_time;
+        delete out.actual_end_time;
+      }
+      if (table === "appointment_customers")
+        out.guard_shard = visitShard(row.id);
       if (table === "treatments") {
+        Object.assign(out, treatmentTimes(out.start_time, out.end_time));
+        delete out.start_time;
+        delete out.end_time;
+        delete out.duration_minutes;
         out.service_snapshots = data.treatment_services
           .filter((s) => s.treatment_id === row.id)
           .map(({ price_snapshot: _price, ...line }) => line);
@@ -71,9 +94,11 @@ export function splitFirebaseData(
       t.id,
       clean({
         treatment_id: t.id,
-        total_price: t.total_price,
-        material_cost: t.material_cost,
-        price_override: t.price_override ?? null,
+        total_cents: t.total_price == null ? null : eurosToCents(t.total_price),
+        material_cents:
+          t.material_cost == null ? null : eurosToCents(t.material_cost),
+        override_cents:
+          t.price_override == null ? null : eurosToCents(t.price_override),
         completed: !!t.end_time,
         performed_by: t.performed_by || ownerId,
         service_ids: data.treatment_services
@@ -84,7 +109,8 @@ export function splitFirebaseData(
           .map((s) => ({
             service_id: s.service_id,
             name: s.service_name_snapshot,
-            price: s.price_snapshot,
+            price_cents:
+              s.price_snapshot == null ? null : eurosToCents(s.price_snapshot),
             duration: s.duration_minutes_snapshot,
           })),
       }),
@@ -100,7 +126,46 @@ export function joinFirebaseData(
   const data = emptyData();
   for (const record of records)
     if (tables.includes(record._table)) {
-      const { _table, _facility_id, ...row } = record;
+      const {
+        _table,
+        _facility_id,
+        guard_shard: _guardShard,
+        _audit_revision: _auditRevision,
+        actual_start_ms,
+        actual_end_ms,
+        start_ms,
+        end_ms,
+        duration_ms,
+        ...row
+      } = record;
+      if (_table === "services" || _table === "facility_service_prices") {
+        row.price = checkedCents(row.price_cents) / 100;
+        delete row.price_cents;
+      }
+      if (_table === "appointments")
+        Object.assign(row, {
+          actual_start_time:
+            actual_start_ms == null
+              ? null
+              : new Date(actual_start_ms).toISOString(),
+          actual_end_time:
+            actual_end_ms == null
+              ? null
+              : new Date(actual_end_ms).toISOString(),
+        });
+      if (_table === "treatments") {
+        if (
+          !Number.isSafeInteger(start_ms) ||
+          (end_ms !== null &&
+            (!Number.isSafeInteger(end_ms) || end_ms < start_ms))
+        )
+          throw Error("Behandlungszeiten müssen zuerst migriert werden.");
+        Object.assign(row, {
+          start_time: new Date(start_ms).toISOString(),
+          end_time: end_ms === null ? null : new Date(end_ms).toISOString(),
+          duration_minutes: duration_ms === null ? null : duration_ms / 60000,
+        });
+      }
       (data[_table as Table] as Json[]).push(row);
     }
   for (const payment of data.treatment_payments) {
@@ -116,20 +181,33 @@ export function joinFirebaseData(
     delete (t as unknown as Json).service_snapshots;
     const fin = finances.find((f) => f.treatment_id === t.id);
     Object.assign(t, {
-      total_price: fin?.total_price ?? null,
-      material_cost: fin?.material_cost ?? null,
-      price_override: fin?.price_override ?? null,
+      total_price:
+        fin?.total_cents == null ? null : checkedCents(fin.total_cents) / 100,
+      material_cost:
+        fin?.material_cents == null
+          ? null
+          : checkedCents(fin.material_cents) / 100,
+      price_override:
+        fin?.override_cents == null
+          ? null
+          : checkedCents(fin.override_cents) / 100,
     });
     for (const line of data.treatment_services.filter(
       (s) => s.treatment_id === t.id,
     ))
-      line.price_snapshot =
-        fin?.lines.find((l: Json) => l.service_id === line.service_id)?.price ??
-        null;
+      (line as unknown as Json).price_snapshot =
+        (fin?.lines.find((l: Json) => l.service_id === line.service_id)
+          ?.price_cents ?? null) === null
+          ? null
+          : checkedCents(
+              fin!.lines.find((l: Json) => l.service_id === line.service_id)
+                .price_cents,
+            ) / 100;
     for (const p of data.treatment_payments.filter(
       (p) => p.treatment_id === t.id,
     ))
-      p.amount = fin?.total_price ?? null;
+      (p as unknown as Json).amount =
+        fin?.total_cents == null ? null : checkedCents(fin.total_cents) / 100;
   }
   return data;
 }

@@ -1,3 +1,9 @@
+import { auditView } from "./firebaseAudit";
+import { pagedDocuments } from "./firebaseQueries";
+import { normalizeAppError } from "./appErrors";
+import { eurosToCents } from "./money";
+import { addWeeks, customerDue } from "./domain";
+import { visitGuards } from "./firebaseWorkflow";
 import {
   acceptFirebaseInvite,
   usableFirebaseInvite,
@@ -18,7 +24,10 @@ import {
   collection,
   doc,
   getDocFromServer,
-  getDocsFromServer,
+  getDocsFromServer as rawGetDocsFromServer,
+  orderBy,
+  limit,
+  serverTimestamp,
   query,
   where,
   runTransaction,
@@ -134,7 +143,19 @@ export class FirebaseRepository {
       },
     };
   }
+  clearCache() {
+    this.cache = null;
+    this.cachedMember = "";
+  }
   async snapshot() {
+    try {
+      return await this.loadSnapshot();
+    } catch (error) {
+      this.clearCache();
+      throw error;
+    }
+  }
+  private async loadSnapshot() {
     // Revision before/after guards an internally consistent snapshot. The version
     // is also read inside writes; concurrent editors never silently overwrite.
     for (let attempt = 0; attempt < 3; attempt++) {
@@ -154,20 +175,20 @@ export class FirebaseRepository {
         paymentContacts: Json[] = [];
       if (owner) {
         const [r, f] = await Promise.all([
-          getDocsFromServer(this.records()),
-          getDocsFromServer(this.finance()),
+          pagedDocuments(this.records()),
+          pagedDocuments(this.finance()),
         ]);
         records = r.docs.map((d) => d.data());
         finance = f.docs.map((d) => d.data());
       } else {
         const globalTables = ["services", "payment_methods"];
-        const r = await getDocsFromServer(
+        const r = await pagedDocuments(
           query(this.records(), where("_table", "in", globalTables)),
         );
         records = r.docs.map((d) => d.data());
         const ids = member.facility_ids || [];
         for (let n = 0; n < ids.length; n += 30) {
-          const q = await getDocsFromServer(
+          const q = await pagedDocuments(
             query(
               this.records(),
               where("_facility_id", "in", ids.slice(n, n + 30)),
@@ -186,7 +207,7 @@ export class FirebaseRepository {
         // accidentally read contact information without the billing permission.
         if (permission(member, "view_billing")) {
           for (let n = 0; n < ids.length; n += 30) {
-            const bills = await getDocsFromServer(
+            const bills = await pagedDocuments(
               query(
                 collection(this.root(), "billing"),
                 where("_facility_id", "in", ids.slice(n, n + 30)),
@@ -200,7 +221,7 @@ export class FirebaseRepository {
             );
           }
         }
-        const f = await getDocsFromServer(
+        const f = await pagedDocuments(
           query(
             this.finance(),
             where("performed_by", "==", this.uid),
@@ -211,12 +232,12 @@ export class FirebaseRepository {
       }
       if (owner)
         paymentContacts = (
-          await getDocsFromServer(collection(this.root(), "payment_contacts"))
+          await pagedDocuments(collection(this.root(), "payment_contacts"))
         ).docs.map((d) => d.data());
       else if (permission(member, "view_billing")) {
         const ids = member.facility_ids || [];
         for (let n = 0; n < ids.length; n += 30) {
-          const contacts = await getDocsFromServer(
+          const contacts = await pagedDocuments(
             query(
               collection(this.root(), "payment_contacts"),
               where("_facility_id", "in", ids.slice(n, n + 30)),
@@ -228,7 +249,7 @@ export class FirebaseRepository {
       let ownerBilling: Data["customer_billing"] = [];
       if (owner)
         ownerBilling = (
-          await getDocsFromServer(collection(this.root(), "billing"))
+          await pagedDocuments(collection(this.root(), "billing"))
         ).docs.map((d) => d.data()) as Data["customer_billing"];
       const after = await getDocFromServer(
         doc(this.root(), "state", "revision"),
@@ -281,13 +302,13 @@ export class FirebaseRepository {
       const data = joinFirebaseData(records, finance, paymentContacts);
       if (owner) data.customer_billing = ownerBilling;
       const members = owner
-        ? (
-            await getDocsFromServer(collection(this.root(), "members"))
-          ).docs.map((d) => d.data() as TeamMember)
+        ? (await pagedDocuments(collection(this.root(), "members"))).docs.map(
+            (d) => d.data() as TeamMember,
+          )
         : [member];
       const invites = owner
         ? (
-            await getDocsFromServer(
+            await pagedDocuments(
               query(
                 collection(this.db, "hf_invites"),
                 where("business_id", "==", this.businessId),
@@ -297,8 +318,14 @@ export class FirebaseRepository {
         : [];
       const audit = owner
         ? (
-            await getDocsFromServer(query(collection(this.root(), "audit")))
-          ).docs.map((d) => d.data())
+            await rawGetDocsFromServer(
+              query(
+                collection(this.root(), "audit"),
+                orderBy("created_at", "desc"),
+                limit(200),
+              ),
+            )
+          ).docs.map((d) => auditView(d.data()))
         : [];
       const assignments = data.appointments.flatMap((a) =>
         ((a as unknown as Json).assigned_users || []).map((uid: string) => ({
@@ -329,7 +356,103 @@ export class FirebaseRepository {
     }
     throw Error("Das Team arbeitet gerade parallel. Bitte erneut laden.");
   }
-  async mutate(action: string, p: Json = {}) {
+  async mutate(action: string, p: Json = {}): Promise<any> {
+    // Roster expansion is resumable and bounded to one customer per commit.
+    // A planning barrier blocks starts/closure until the roster has been written.
+    if (
+      (["plan_customer_visit", "plan_visit_flexible"].includes(action) &&
+        !p.p_atomic_plan &&
+        (p.p_all || p.p_customer)) ||
+      action === "resume_visit_plan"
+    ) {
+      let id = p.p_appointment as string | undefined;
+      if (action !== "resume_visit_plan")
+        id = await this.mutate(action, {
+          ...p,
+          p_all: false,
+          p_customer: null,
+          p_atomic_plan: true,
+          p_planning: true,
+          p_include_due: p.p_all,
+          p_planned_customer: p.p_customer || null,
+        });
+      const planned = (await this.snapshot()).data;
+      const a = planned.appointments.find((a) => a.id === id);
+      if (!a) throw Error("Besuch nicht gefunden.");
+      const selected = a.selected_customer_id || p.p_customer;
+      const customers = planned.customers.filter((c) =>
+        selected
+          ? c.id === selected
+          : c.facility_id === a.facility_id &&
+            (a.all_groups || c.group_id === a.group_id) &&
+            (!a.cohort_id || c.cohort_id === a.cohort_id) &&
+            customerDue(planned, c, a.appointment_date),
+      );
+      try {
+        for (const c of customers)
+          await this.mutate("add_visit_customer", {
+            p_appointment: id,
+            p_customer: c.id,
+          });
+        await this.mutate("complete_visit_plan", { p_appointment: id });
+      } catch (cause) {
+        throw Object.assign(
+          new Error(
+            "Die Besuchsplanung ist noch gesperrt. Besuch öffnen und Planung vervollständigen.",
+          ),
+          { code: "HF_PLAN_INCOMPLETE", cause },
+        );
+      }
+      return id;
+    }
+    // Closure remains a small, atomic commit; recurrence is separately retryable.
+    // Otherwise a large new roster can exceed Firestore's rule evaluation budget.
+    if (action === "close_visit" && !p.p_no_recurrence) {
+      const original = (await this.snapshot()).data.appointments.find(
+        (a) => a.id === p.p_appointment,
+      );
+      if (!original) throw Error("Besuch nicht gefunden.");
+      await this.mutate(action, { ...p, p_no_recurrence: true });
+      if (!original.recurrence_weeks) return null;
+      const date = addWeeks(
+        original.appointment_date,
+        original.recurrence_weeks,
+      );
+      const current = await this.snapshot();
+      const existing = current.data.appointments.find(
+        (a) =>
+          a.recurrence_series_id === original.recurrence_series_id &&
+          a.appointment_date === date,
+      );
+      if (existing)
+        return existing.planning_complete === false
+          ? this.mutate("resume_visit_plan", { p_appointment: existing.id })
+          : existing.id;
+      try {
+        return await this.mutate("plan_customer_visit", {
+          p_facility: original.facility_id,
+          p_group: original.all_groups ? null : original.group_id,
+          p_customer: original.selected_customer_id || null,
+          p_cohort: original.cohort_id,
+          p_date: date,
+          p_time: original.start_time,
+          p_weeks: original.recurrence_weeks,
+          p_all: original.auto_include_due ?? true,
+          p_options: {
+            series_id: original.recurrence_series_id,
+            all_groups: original.all_groups,
+          },
+        });
+      } catch (cause) {
+        throw Object.assign(
+          new Error(
+            "Besuch ist sicher abgeschlossen. Folgetermin konnte nicht angelegt werden; Abschluss erneut aufrufen oder Geschäftsführung informieren.",
+            { cause },
+          ),
+          { code: "HF_FOLLOWUP_NEEDED" },
+        );
+      }
+    }
     const snapshot = await this.snapshot(),
       { data: before, team } = snapshot;
     const workflow = new WorkflowRepository(
@@ -348,6 +471,7 @@ export class FirebaseRepository {
       save_billing: "view_billing",
       record_payment: "record_payments",
       close_visit: "close_visits",
+      complete_visit_plan: "edit_schedule",
     };
     const allowed = [
       "start_treatment",
@@ -377,6 +501,10 @@ export class FirebaseRepository {
     if (action === "save_treatment" && p.p_services?.length > 4)
       throw new Error(
         "Bitte höchstens vier Leistungen pro Behandlung auswählen.",
+      );
+    if (action === "cancel_visit" && p.p_delete)
+      throw Error(
+        "Besuche bleiben als Historie erhalten. Bitte stattdessen absagen.",
       );
     let result: any;
     const extra: { ref: DocumentReference; value?: Json; remove?: boolean }[] =
@@ -554,6 +682,7 @@ export class FirebaseRepository {
       const t = workflow.data.treatments.find((t) => t.id === p.p_treatment);
       if (!t?.end_time) throw Error("Behandlung noch nicht abgeschlossen.");
       t.total_price = p.p_price;
+      t.price_override = p.p_price;
       t.material_cost = p.p_material;
       const payment = workflow.data.treatment_payments.find(
         (x) => x.treatment_id === t.id,
@@ -572,6 +701,11 @@ export class FirebaseRepository {
         Object.assign(a, {
           assigned_users: [this.uid],
           responsible_user: this.uid,
+          planning_complete: !p.p_planning,
+          ...(p.p_planning ? { auto_include_due: !!p.p_include_due } : {}),
+          ...(p.p_planned_customer
+            ? { selected_customer_id: p.p_planned_customer }
+            : {}),
         });
     if (
       workflow.data.treatments.some(
@@ -662,7 +796,7 @@ export class FirebaseRepository {
           s.id,
           {
             name: s.name,
-            price: s.price,
+            price_cents: eurosToCents(s.price),
             duration: s.duration_minutes,
             is_active: s.is_active,
           },
@@ -671,7 +805,7 @@ export class FirebaseRepository {
       const priceMap = Object.fromEntries(
         workflow.data.facility_service_prices.map((s) => [
           `${s.facility_id}:${s.service_id}`,
-          s.price,
+          eurosToCents(s.price),
         ]),
       );
       writes.push({
@@ -726,6 +860,25 @@ export class FirebaseRepository {
         expected: t.id,
       });
     }
+    const oldGuards = visitGuards(before),
+      nextGuards = visitGuards(workflow.data);
+    for (const [id, guard] of nextGuards) {
+      if (!sameFirebaseDocument(oldGuards.get(id), guard)) {
+        const previous = oldGuards.get(id);
+        if (
+          previous &&
+          previous.pending_ids.filter((x) => !guard.pending_ids.includes(x))
+            .length > 4
+        )
+          throw Error(
+            "Bitte höchstens vier Kunden pro Prüfabschnitt gleichzeitig abschließen.",
+          );
+        writes.push({
+          ref: doc(this.root(), "visit_guards", id),
+          value: guard,
+        });
+      }
+    }
     const revisionRef = doc(this.root(), "state", "revision");
     await runTransaction(this.db, async (tx) => {
       const revision = await tx.get(revisionRef);
@@ -743,30 +896,38 @@ export class FirebaseRepository {
         if ((current.data()?.treatment_id || null) !== lock.expected)
           throw Error("Eine Behandlung läuft bereits. Bitte neu laden.");
       }
+      const primary = writes[0];
       for (const w of writes) {
         if (w.remove) tx.delete(w.ref);
-        else tx.set(w.ref, clean(w.value));
+        else
+          tx.set(
+            w.ref,
+            w === primary
+              ? { ...clean(w.value), _audit_revision: snapshot.revision + 1 }
+              : clean(w.value),
+          );
       }
       for (const lock of locks) {
         if (lock.value) tx.set(lock.ref, lock.value);
         else tx.delete(lock.ref);
       }
       tx.set(revisionRef, { value: snapshot.revision + 1 });
-      tx.set(doc(collection(this.root(), "audit")), {
-        id: crypto.randomUUID(),
+      const auditRef = doc(collection(this.root(), "audit"));
+
+      // The audit's primary target gets the transaction revision. Rules compare
+      // its actual before/after values, not a client-supplied description.
+
+      tx.set(auditRef, {
+        id: auditRef.id,
         actor_id: this.uid,
-        action,
-        record_id: result || p.p_treatment || p.p_appointment || p.id || "",
-        details:
-          action === "correct_treatment"
-            ? {
-                reason: p.p_reason,
-                old_price: before.treatments.find((t) => t.id === p.p_treatment)
-                  ?.total_price,
-                new_price: p.p_price,
-              }
-            : {},
-        created_at: new Date().toISOString(),
+        business_id: this.businessId,
+        action: "data_changed",
+        record_id: primary.ref.id,
+        target_path: primary.ref.path,
+        operation: primary.remove ? "delete" : "write",
+        revision: snapshot.revision + 1,
+        details: {},
+        created_at: serverTimestamp(),
       });
     });
     return result;
@@ -824,7 +985,7 @@ export async function firebaseAdminContext(): Promise<AppAdminContext> {
     /* local preferences grant no rights */
   }
   const businesses = (
-    await getDocsFromServer(collection(database, "hf_businesses"))
+    await pagedDocuments(collection(database, "hf_businesses"))
   ).docs
     .filter((d) => d.data()._archived !== true)
     .map((d) => ({
@@ -832,7 +993,7 @@ export async function firebaseAdminContext(): Promise<AppAdminContext> {
       ...d.data(),
     })) as AppAdminContext["businesses"];
   const admins = (
-    await getDocsFromServer(collection(database, "hf_admins"))
+    await pagedDocuments(collection(database, "hf_admins"))
   ).docs.map((d) => ({
     user_id: d.id,
     ...d.data(),
@@ -842,21 +1003,28 @@ export async function firebaseAdminContext(): Promise<AppAdminContext> {
   if (!selection && businesses?.some((b) => b.id === preferred))
     selection = preferred;
   const audit = (
-    await getDocsFromServer(collection(database, "hf_admin_audit"))
-  ).docs.map((d) => ({ id: d.id, ...d.data() })) as AppAdminContext["audit"];
+    await rawGetDocsFromServer(
+      query(
+        collection(database, "hf_admin_audit"),
+        orderBy("created_at", "desc"),
+        limit(200),
+      ),
+    )
+  ).docs.map((d) => ({
+    id: d.id,
+    ...auditView(d.data()),
+  })) as AppAdminContext["audit"];
   let users: AppAdminContext["users"];
   try {
-    const accounts = await getDocsFromServer(
-      collection(database, "hf_accounts"),
-    );
-    users = (
-      await getDocsFromServer(collection(database, "hf_users"))
-    ).docs.map((d) => ({
-      uid: d.id,
-      ...d.data(),
-      business_id:
-        accounts.docs.find((a) => a.id === d.id)?.data().business_id || null,
-    })) as AppAdminContext["users"];
+    const accounts = await pagedDocuments(collection(database, "hf_accounts"));
+    users = (await pagedDocuments(collection(database, "hf_users"))).docs.map(
+      (d) => ({
+        uid: d.id,
+        ...d.data(),
+        business_id:
+          accounts.docs.find((a) => a.id === d.id)?.data().business_id || null,
+      }),
+    ) as AppAdminContext["users"];
   } catch (e) {
     if ((e as { code?: string }).code !== "permission-denied") throw e;
   }
@@ -890,6 +1058,8 @@ export async function firebaseInitialize() {
     tx.set(root, {
       name: "Mein Unternehmen",
       payment_contacts_schema: 1,
+      workflow_schema: 2,
+      finance_schema: 3,
       owner_user_id: user.uid,
       owner_email: user.email,
       created_at: new Date().toISOString(),
@@ -904,7 +1074,7 @@ export async function firebaseInitialize() {
       _table: "services",
       _facility_id: "",
       name: s.name,
-      price: s.price,
+      price_cents: eurosToCents(s.price),
       duration_minutes: s.duration_minutes,
       is_active: true,
       created_at: new Date().toISOString(),
@@ -920,7 +1090,7 @@ export async function firebaseInitialize() {
           s.id,
           {
             name: s.name,
-            price: s.price,
+            price_cents: s.price_cents,
             duration: s.duration_minutes,
             is_active: true,
           },
@@ -1038,31 +1208,19 @@ export async function firebaseRpc(action: string, p: Json = {}) {
         currentRepository = null;
         return null;
       }
-      await runTransaction(database, async (tx) => {
-        tx.set(doc(collection(database, "hf_admin_audit")), {
-          actor_id: user.uid,
-          action: "business_access",
-          business_id: p.p_business,
-          created_at: new Date().toISOString(),
-          details: {},
-        });
-      });
+      // Selecting a company is a local read context, not a business mutation.
+      // Never fabricate a freely writable "access" event in the immutable log.
+      if (
+        !(ctx.businesses || []).some(
+          (company) => company.id === String(p.p_business || ""),
+        )
+      )
+        throw { code: "42501" };
+
       return null;
     }
     return (await repository()).mutate(action, p);
   } catch (e) {
-    const code = (e as { code?: string }).code;
-    if (
-      code?.startsWith("auth/") ||
-      ["unavailable", "resource-exhausted"].includes(code || "")
-    )
-      throw Error(firebaseError(e));
-    if (code === "permission-denied")
-      throw {
-        code: "42501",
-        message:
-          "Kein Zugriff oder eine Eingabe wurde von den Sicherheitsregeln abgelehnt. Bitte erneut laden.",
-      };
-    throw e;
+    throw normalizeAppError(e);
   }
 }

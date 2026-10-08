@@ -1,3 +1,4 @@
+import { shiftCalendarDate } from "./calendarDates";
 import { WeekPlanning } from "./WeekPlanning";
 import { scheduledCustomerLabel } from "./domain";
 import { visitArea } from "./domain";
@@ -18,10 +19,7 @@ export function Calendar({
     [anchor, setAnchor] = useState(today());
   const date = new Date(anchor + "T12:00:00Z");
   function shift(direction: number) {
-    const d = new Date(date);
-    if (view === "Monat") d.setUTCMonth(d.getUTCMonth() + direction);
-    else d.setUTCDate(d.getUTCDate() + direction * 7);
-    setAnchor(d.toISOString().slice(0, 10));
+    setAnchor(shiftCalendarDate(anchor, view, direction));
   }
   const first = new Date(
     Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1, 12),

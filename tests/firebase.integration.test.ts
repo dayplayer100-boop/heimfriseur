@@ -11,6 +11,9 @@ import {
   getDocs,
   collection,
   updateDoc,
+  query,
+  where,
+  limit,
   type Firestore,
 } from "firebase/firestore";
 import { readFileSync } from "node:fs";
@@ -52,6 +55,8 @@ suite("Firebase Spark real transaction workflows", () => {
     b.set(doc(db, base), {
       name: "Test",
       payment_contacts_schema: 1,
+      workflow_schema: 2,
+      finance_schema: 3,
       owner_user_id: "owner",
       owner_email: "owner@test.invalid",
       created_at: new Date().toISOString(),
@@ -193,6 +198,7 @@ suite("Firebase Spark real transaction workflows", () => {
     });
     let snap = await worker.snapshot();
     expect(snap.data.appointment_customers).toHaveLength(14);
+    expect(snap.data.appointments[0].planning_complete).toBe(true);
     const member = snap.data.appointment_customers.find(
       (m) => m.customer_id === customer,
     )!;
@@ -633,4 +639,48 @@ suite("Firebase Spark real transaction workflows", () => {
       ),
     ).rejects.toBeTruthy();
   }, 60000);
+  it("pages scoped employee reads and rejects unlimited/oversized queries", async () => {
+    const base = "hf_businesses/paging-fixture";
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      const db = (ctx.firestore() as unknown as { _delegate: Firestore })
+        ._delegate;
+      const batch = writeBatch(db);
+      batch.set(doc(db, base), {
+        owner_user_id: "paging-director",
+        payment_contacts_schema: 1,
+      });
+      batch.set(doc(db, base, "members", "paging-worker"), {
+        user_id: "paging-worker",
+        role: "employee",
+        is_active: true,
+        facility_ids: ["f"],
+        permissions: {},
+      });
+      for (let i = 0; i < 250; i++)
+        batch.set(
+          doc(db, base, "records", "customers~" + String(i).padStart(4, "0")),
+          { id: String(i), _table: "customers", _facility_id: "f" },
+        );
+      await batch.commit();
+    });
+    const db = (
+      env
+        .authenticatedContext("paging-worker", {
+          email: "worker@test.invalid",
+          email_verified: true,
+        })
+        .firestore() as unknown as { _delegate: Firestore }
+    )._delegate;
+    const scoped = query(
+      collection(db, base, "records"),
+      where("_facility_id", "==", "f"),
+    );
+    const { pagedDocuments } = await import("../src/firebaseQueries");
+    expect((await pagedDocuments(scoped)).docs.length).toBe(250);
+    await expect(pagedDocuments(scoped, 200)).rejects.toMatchObject({
+      code: "HF_DATA_LIMIT",
+    });
+    await expect(getDocs(scoped)).rejects.toBeTruthy();
+    await expect(getDocs(query(scoped, limit(201)))).rejects.toBeTruthy();
+  }, 30000);
 });

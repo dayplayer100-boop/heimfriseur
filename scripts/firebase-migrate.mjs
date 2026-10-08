@@ -28,16 +28,17 @@ if (exported.schema_version !== 2 || !data || !team?.business?.owner_user_id)
 if (data.treatments?.some((t) => !t.end_time))
   throw Error("Bitte vor der Übertragung alle laufenden Behandlungen beenden.");
 const module = await build({
-  entryPoints: ["src/firebaseData.ts"],
+  entryPoints: ["src/firebaseImport.ts"],
   bundle: true,
   platform: "node",
   format: "esm",
   write: false,
 });
-const { splitFirebaseData, assertFirebaseData } = await import(
-  "data:text/javascript;base64," +
-    Buffer.from(module.outputFiles[0].text).toString("base64")
-);
+const { prepareFirebaseImport: splitFirebaseData, assertFirebaseData } =
+  await import(
+    "data:text/javascript;base64," +
+      Buffer.from(module.outputFiles[0].text).toString("base64")
+  );
 assertFirebaseData(data);
 const totals = () => ({
   customers: data.customers.length,
@@ -188,11 +189,21 @@ for (const a of data.appointments) {
   a.assigned_users = [uid];
   a.responsible_user = uid;
 }
-const { records, finances, paymentContacts } = splitFirebaseData(
+const { records, finances, paymentContacts, guards } = splitFirebaseData(
   data,
   uid,
   uid,
 );
+const money = (value) => {
+  const cents = Math.round(value * 100);
+  if (
+    !Number.isSafeInteger(cents) ||
+    cents < 0 ||
+    Math.abs(value * 100 - cents) > 1e-7
+  )
+    throw Error("Ungültiger Geldbetrag.");
+  return cents;
+};
 const writes = [];
 const set = (name, row) => ({
   update: { name, fields: encode(row).mapValue.fields },
@@ -204,6 +215,8 @@ for (const [id, row] of records)
   else writes.push(set(root + "/records/" + id, row));
 for (const [id, row] of finances)
   writes.push(set(root + "/finance/" + id, row));
+for (const [id, row] of guards)
+  writes.push(set(root + "/visit_guards/" + id, row));
 for (const [id, row] of paymentContacts)
   writes.push(set(root + "/payment_contacts/" + id, row));
 writes.push(
@@ -213,7 +226,7 @@ writes.push(
         s.id,
         {
           name: s.name,
-          price: s.price,
+          price_cents: money(s.price),
           duration: s.duration_minutes,
           is_active: s.is_active,
         },
@@ -222,7 +235,7 @@ writes.push(
     prices: Object.fromEntries(
       data.facility_service_prices.map((s) => [
         s.facility_id + ":" + s.service_id,
-        s.price,
+        money(s.price),
       ]),
     ),
   }),
@@ -338,11 +351,19 @@ await request(
           fields: encode({
             _migration_state: "complete",
             payment_contacts_schema: 1,
+            workflow_schema: 2,
+            finance_schema: 3,
             name: data.profiles[0]?.business_name || team.business.name,
           }).mapValue.fields,
         },
         updateMask: {
-          fieldPaths: ["_migration_state", "name", "payment_contacts_schema"],
+          fieldPaths: [
+            "_migration_state",
+            "name",
+            "payment_contacts_schema",
+            "workflow_schema",
+            "finance_schema",
+          ],
         },
       },
     ],

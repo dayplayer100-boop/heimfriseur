@@ -1,3 +1,4 @@
+import { sumMoney, moneyDifference, moneyRate } from "./money";
 import type { Appointment, Data, Treatment } from "./types";
 export const euro = (n: number) =>
   new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR" }).format(
@@ -63,22 +64,19 @@ export function visitStats(d: Data, a: Appointment) {
     done: members.filter((m) => m.status === "Erledigt").length,
     skipped: members.filter((m) => m.status === "Nicht durchgeführt").length,
     open: open.length,
-    revenue: completed.reduce((s, t) => s + Number(t.total_price), 0),
-    material: completed.reduce((s, t) => s + Number(t.material_cost), 0),
+    revenue: sumMoney(completed.map((t) => t.total_price)),
+    material: sumMoney(completed.map((t) => t.material_cost)),
     treatment: completed.reduce((s, t) => s + Number(t.duration_minutes), 0),
-    planned: members
-      .filter((m) => m.status !== "Nicht durchgeführt")
-      .reduce(
-        (s, m) =>
-          s +
-          (completed.find((t) => t.appointment_customer_id === m.id)
-            ?.total_price ??
-            customerDefaults(d, m.customer_id).reduce(
-              (n, x) => n + Number(x.price),
-              0,
-            )),
-        0,
-      ),
+    planned: sumMoney(
+      members
+        .filter((m) => m.status !== "Nicht durchgeführt")
+        .map(
+          (m) =>
+            completed.find((t) => t.appointment_customer_id === m.id)
+              ?.total_price ??
+            sumMoney(customerDefaults(d, m.customer_id).map((s) => s.price)),
+        ),
+    ),
     remaining: open.reduce(
       (s, m) =>
         s +
@@ -97,8 +95,8 @@ export function visitStats(d: Data, a: Appointment) {
 }
 export function metrics(ts: Treatment[], as: Appointment[]) {
   const completed = ts.filter((t) => t.end_time);
-  const revenue = completed.reduce((s, t) => s + Number(t.total_price), 0),
-    material = completed.reduce((s, t) => s + Number(t.material_cost), 0),
+  const revenue = sumMoney(completed.map((t) => t.total_price)),
+    material = sumMoney(completed.map((t) => t.material_cost)),
     treatment = completed.reduce((s, t) => s + Number(t.duration_minutes), 0);
   const visits = as.filter((a) => a.status === "Abgeschlossen");
   const work = visits.reduce(
@@ -116,11 +114,11 @@ export function metrics(ts: Treatment[], as: Appointment[]) {
     visits: visits.length,
     revenue,
     material,
-    net: revenue - material,
+    net: moneyDifference(revenue, material),
     work,
     treatment,
-    perCustomer: completed.length ? revenue / completed.length : 0,
-    perHour: work ? revenue / (work / 60) : 0,
+    perCustomer: completed.length ? moneyRate(revenue, completed.length) : 0,
+    perHour: work ? moneyRate(revenue, work / 60) : 0,
     average: completed.length ? treatment / completed.length : 0,
   };
 }

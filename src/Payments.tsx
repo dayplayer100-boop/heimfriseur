@@ -1,3 +1,4 @@
+import { sumMoney } from "./money";
 import { useState } from "react";
 import { useStore } from "./store";
 import { Button, Input, Field, Modal } from "./ui";
@@ -289,9 +290,7 @@ export function PaymentsSettings() {
         <p>
           <strong>
             {outstanding.length} offene / ungeklärte Zahlungen ·{" "}
-            {euro(
-              outstanding.reduce((sum, t) => sum + Number(t.total_price), 0),
-            )}
+            {euro(sumMoney(outstanding.map((t) => t.total_price)))}
           </strong>
         </p>
         {!outstanding.length && (

@@ -1,3 +1,4 @@
+import { sumMoney } from "./money";
 import {
   emptyData,
   type Data,
@@ -186,7 +187,7 @@ export class WorkflowRepository {
         result = await this.rpc("plan_visit_flexible", {
           ...p,
           p_all: p.p_all && !p.p_customer,
-          p_options: { cohort_id: p.p_cohort },
+          p_options: { ...p.p_options, cohort_id: p.p_cohort },
         });
         if (p.p_customer) {
           await this.rpc("add_visit_customer", {
@@ -355,7 +356,10 @@ export class WorkflowRepository {
                 price_snapshot: effectivePrice(d, s.id, a.facility_id),
                 duration_minutes_snapshot: s.duration_minutes,
               });
-              t.total_price += effectivePrice(d, s.id, a.facility_id);
+              t.total_price = sumMoney([
+                t.total_price,
+                effectivePrice(d, s.id, a.facility_id),
+              ]);
             }
           });
         m.status = "In Behandlung";
@@ -401,9 +405,11 @@ export class WorkflowRepository {
         });
         t.total_price =
           p.p_price ??
-          d.treatment_services
-            .filter((s) => s.treatment_id === t.id)
-            .reduce((n, s) => n + s.price_snapshot, 0);
+          sumMoney(
+            d.treatment_services
+              .filter((s) => s.treatment_id === t.id)
+              .map((s) => s.price_snapshot),
+          );
         t.price_override = p.p_price;
         t.material_cost = p.p_material;
         t.notes = p.p_notes;
@@ -649,8 +655,14 @@ export class WorkflowRepository {
         m.non_completion_reason = p.p_reason;
         break;
       }
+      case "complete_visit_plan": {
+        getA(p.p_appointment).planning_complete = true;
+        break;
+      }
       case "close_visit": {
         const a = getA(p.p_appointment);
+        if (a.planning_complete === false)
+          throw Error("Besuchsplanung zuerst vervollständigen.");
         if (a.status === "Abgeschlossen") return null;
         if (
           d.appointment_customers.some(
@@ -664,7 +676,7 @@ export class WorkflowRepository {
           );
         a.status = "Abgeschlossen";
         if (a.actual_start_time) a.actual_end_time = new Date().toISOString();
-        if (a.recurrence_weeks) {
+        if (a.recurrence_weeks && !p.p_no_recurrence) {
           const next = addWeeks(a.appointment_date, a.recurrence_weeks);
           result = d.appointments.find(
             (x) =>

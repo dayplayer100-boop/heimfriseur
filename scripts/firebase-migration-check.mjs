@@ -38,6 +38,7 @@ data.treatment_services.push({
   price_snapshot: 28,
   duration_minutes_snapshot: 30,
 });
+data.appointment_customers[0].status = "Erledigt";
 const temporary = mkdtempSync(join(tmpdir(), "heim-import-check-")),
   fixture = join(temporary, "export.json");
 writeFileSync(
@@ -299,8 +300,8 @@ if (
 )
   throw Error("Business record lost or not assigned");
 if (
-  (await getDocument(sourcePath + "/finance/historical-test")).fields
-    .total_price.integerValue !== "28"
+  (await getDocument(sourcePath + "/finance/a1:c0")).fields.total_cents
+    .integerValue !== "2800"
 )
   throw Error("Historic finance changed");
 if ((await getDocument(targetPath)).error?.code !== 404)
@@ -401,7 +402,12 @@ console.log(
 
 const removedExtra = execFileSync(
   process.execPath,
-  [...assignArgs, "--delete-extra-company"],
+  [
+    ...assignArgs,
+    "--delete-extra-company",
+    "--backup-dir",
+    mkdtempSync(join(tmpdir(), "hf-admin-backup-")),
+  ],
   { encoding: "utf8" },
 );
 if (

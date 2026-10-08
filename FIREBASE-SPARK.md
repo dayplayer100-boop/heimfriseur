@@ -1,5 +1,7 @@
 # HeimFriseur: getrennte Firebase-Testversion, ohne Zahlungskonto
 
+**Aktuell 6.5.0:** Bestehende Testsite `heimfriseur-test-237368331242`. Vor Veröffentlichung die [Live-Phase 1](PHASE-1-LIVE.md) und anschließend [Migrationen/Abnahme Phasen 2–5](PHASE-2-5-FREIGABE.md) durchführen. Neue Regeln erfordern `payment_contacts_schema: 1`, `workflow_schema: 2`, `finance_schema: 3`. Die folgenden Abschnitte beschreiben die ursprüngliche Einrichtung; keine neue Hosting-Site dafür anlegen.
+
 Stand: Version 6.3. Die bisherige Supabase-App bleibt bestehen. Der Firebase-Build
 nutzt Firebase Authentication und Firestore Standard im Spark-Tarif, ohne Cloud
 Functions, Cloud SQL, Cloud Storage, Extensions oder Zahlungskonto. Das Projekt

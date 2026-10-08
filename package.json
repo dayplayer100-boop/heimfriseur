@@ -1,6 +1,6 @@
 {
   "name": "heimfriseur",
-  "version": "6.4.1",
+  "version": "6.5.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -21,7 +21,8 @@
     "build:firebase": "npm run check && node scripts/prepare-ocr.mjs && vite build --mode firebase --outDir dist-firebase",
     "dev:firebase": "node scripts/prepare-ocr.mjs && vite --mode firebase --host 0.0.0.0",
     "preview:firebase": "vite preview --mode firebase --outDir dist-firebase --host 0.0.0.0 --port 4174",
-    "test:firebase": "npx --yes --package firebase-tools@15.32.1 firebase emulators:exec --only firestore,auth --project demo-heimfriseur --config firebase.parallel.json \"node scripts/firebase-rules-check.mjs && RUN_FIREBASE_TESTS=1 npx vitest run tests/firebase.integration.test.ts && node scripts/firebase-migration-check.mjs && node scripts/firebase-payment-contacts-check.mjs\""
+    "test:firebase": "npx --yes --package firebase-tools@15.32.1 firebase emulators:exec --only firestore,auth --project demo-heimfriseur --config firebase.parallel.json \"node scripts/firebase-rules-check.mjs && RUN_FIREBASE_TESTS=1 npx vitest run tests/firebase.integration.test.ts && node scripts/firebase-migration-check.mjs && node scripts/firebase-payment-contacts-check.mjs && node scripts/firebase-workflow-migration-check.mjs\"",
+    "test:firebase-browser": "node scripts/run-firebase-browser.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.57.0",

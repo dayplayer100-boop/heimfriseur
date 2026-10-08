@@ -1,3 +1,4 @@
+import { sumMoney } from "./money";
 import { FacilityTools } from "./FacilityTools";
 import { BillingEditor } from "./Payments";
 import { useState } from "react";
@@ -780,9 +781,7 @@ export function CustomerDetail({
             {!services.length && <p>Keine Standardleistungen hinterlegt.</p>}
             <div className="total-row">
               <span>Standardpreis</span>
-              <strong>
-                {euro(services.reduce((n, s) => n + Number(s.price), 0))}
-              </strong>
+              <strong>{euro(sumMoney(services.map((s) => s.price)))}</strong>
             </div>
             <Meta type="clock">
               {minutes(services.reduce((n, s) => n + s.duration_minutes, 0))}{" "}

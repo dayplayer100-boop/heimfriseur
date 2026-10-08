@@ -1,3 +1,4 @@
+import { sumMoney } from "./money";
 import { normalizeTime } from "./ScheduleFields";
 import { visitArea } from "./domain";
 import { PaymentDialog } from "./Payments";
@@ -93,6 +94,23 @@ export function Visit({
   const editable = !["Abgeschlossen", "Abgesagt"].includes(a.status);
   return (
     <>
+      {a.planning_complete === false && (
+        <section className="card">
+          <p>
+            Die Besuchsplanung ist noch unvollständig. Behandlungen und
+            Abschluss bleiben bis dahin gesperrt.
+          </p>
+          {(isOwner || can("edit_schedule")) && (
+            <Button
+              onClick={() =>
+                void run(() => rpc("resume_visit_plan", { p_appointment: id }))
+              }
+            >
+              Planung vervollständigen
+            </Button>
+          )}
+        </section>
+      )}
       <button className="text-button back" onClick={() => navigate("calendar")}>
         <ArrowLeft size={17} />
         Kalender
@@ -236,7 +254,7 @@ export function Visit({
                     <strong>
                       {euro(
                         t?.total_price ??
-                          defaults.reduce((n, s) => n + Number(s.price), 0),
+                          sumMoney(defaults.map((s) => s.price)),
                       )}
                     </strong>
                   )}
@@ -863,14 +881,12 @@ export function TreatmentView({
   const services = data.services.filter(
     (s) => s.is_active || selected.includes(s.id),
   );
-  const total = selected.reduce(
-    (n, id) =>
-      n +
-      Number(
+  const total = sumMoney(
+    selected.map(
+      (id) =>
         snapshots.find((s) => s.service_id === id)?.price_snapshot ??
-          effectivePrice(data, id, c.facility_id),
-      ),
-    0,
+        effectivePrice(data, id, c.facility_id),
+    ),
   );
   const elapsed = Math.max(
     0,

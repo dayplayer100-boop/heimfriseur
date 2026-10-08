@@ -71,12 +71,13 @@ export const firebaseAuthBridge = firebaseAuth
         onAuthStateChange: (
           callback: (event: string, session: unknown) => void,
         ) => {
-          const stop = onIdTokenChanged(firebaseAuth, (u) =>
+          const stop = onIdTokenChanged(firebaseAuth, (u) => {
+            window.dispatchEvent(new Event("heimfriseur-session-reset"));
             callback(
               "SIGNED_IN",
               u?.emailVerified ? { user: { id: u.uid, email: u.email } } : null,
-            ),
-          );
+            );
+          });
           return { data: { subscription: { unsubscribe: stop } } };
         },
         signOut: async () => {

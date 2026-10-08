@@ -17,7 +17,11 @@
   },
   "hosting": {
     "public": "dist-firebase",
-    "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ],
     "rewrites": [
       {
         "source": "**",
@@ -100,6 +104,6 @@
         ]
       }
     ],
-    "site": "heimfriseur-firebase-test"
+    "site": "heimfriseur-test-237368331242"
   }
 }

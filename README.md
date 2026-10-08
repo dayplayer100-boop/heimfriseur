@@ -1,4 +1,4 @@
-## Firebase Spark – getrennte Testversion 6.4.1
+## Firebase Spark – getrennte Testversion 6.5.0
 
 Dieser Branch `firebase-spark` enthält die parallele Firebase-Version: Firebase Auth (E-Mail/Google) und Firestore mit getrennten Finanzdaten und Unternehmensrechten. Kein Zahlungskonto, keine Cloud Functions. Die Supabase-Version und die bestehende Hosting-Adresse bleiben erhalten.
 
@@ -6,7 +6,7 @@ Dieser Branch `firebase-spark` enthält die parallele Firebase-Version: Firebase
 
 ## Auditkorrektur Phase 1 – Rechnungskontakte
 
-Die Firebase-Version trennt Rechnungskontakte serverseitig von operativen Zahlungsdaten. Bestehende Firmen benötigen eine geprüfte Migration; Mitarbeiter-Lesezugriffe bleiben bis dahin gesperrt. Anleitung, vollständige Dateien und Abnahme: [PHASE-1-DATENSCHUTZ.md](PHASE-1-DATENSCHUTZ.md). Die übrigen Audit-Phasen bleiben offen.
+Die Firebase-Version trennt Rechnungskontakte serverseitig von operativen Zahlungsdaten. Bestehende Firmen benötigen eine geprüfte Migration; Mitarbeiter-Lesezugriffe bleiben bis dahin gesperrt. Anleitung, vollständige Dateien und Abnahme: [PHASE-1-DATENSCHUTZ.md](PHASE-1-DATENSCHUTZ.md). Live-Anleitung für Phase 1: [PHASE-1-LIVE.md](PHASE-1-LIVE.md). Phasen 2–4 sowie die Betreiberwerkzeuge für Phase 5 sind im Quellcode umgesetzt. Migrationen, Grenzen und ausfüllbare Freigabe-Checkliste: [PHASE-2-5-FREIGABE.md](PHASE-2-5-FREIGABE.md). 76 Unit-Tests, 2 Emulator-Integrationsfälle, direkte API-Regelprüfungen, Migrations-/Sicherungs-/Restore-Tests und der mobile Browserablauf bestehen. Live-Migration und echte Mobilgeräte-/Mailtests bleiben offen; keine Freigabe für echte Kundendaten.
 
 ## Anmeldung und Sicherheit 6.1.0
 

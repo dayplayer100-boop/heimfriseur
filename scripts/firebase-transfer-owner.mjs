@@ -167,7 +167,7 @@ try {
     members = await all(businessPath + "/members");
   const finance = await all(businessPath + "/finance");
   if (
-    records.some((d) => row(d)._table === "treatments" && !row(d).end_time) ||
+    records.some((d) => row(d)._table === "treatments" && (row(d).end_ms === undefined ? !row(d).end_time : row(d).end_ms === null)) ||
     finance.some((d) => row(d).completed === false)
   )
     throw Error(

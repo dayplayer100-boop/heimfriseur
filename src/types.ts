@@ -83,6 +83,7 @@ export interface Appointment extends Base {
   recurrence_weeks: number | null;
   recurrence_series_id: string | null;
   notes?: string;
+  planning_complete?: boolean;
   actual_start_time: string | null;
   actual_end_time: string | null;
 }

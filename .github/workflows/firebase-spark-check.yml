@@ -2,6 +2,8 @@ name: Firebase Spark Testversion pruefen
 on:
   push:
     branches: [firebase-spark]
+  pull_request:
+    branches: [firebase-spark]
   workflow_dispatch:
 permissions:
   contents: read
@@ -22,8 +24,12 @@ jobs:
       - run: npm audit --audit-level=high
       - run: npm test
       - run: npm run test:firebase
-      - run: npm run build
       - run: npm run build:firebase
+      - run: npx playwright install --with-deps chromium
+      - name: Firebase mobile flows and keyboard dialogs
+        env:
+          CHROMIUM_PATH: ''
+        run: npm run test:firebase-browser
       - uses: actions/upload-artifact@v4
         with:
           name: heimfriseur-firebase-test

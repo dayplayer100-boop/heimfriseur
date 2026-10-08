@@ -2,7 +2,9 @@ import { chromium } from "playwright";
 const url = process.env.FIREBASE_APP_URL || "http://localhost:5174";
 const browser = await chromium.launch({
   headless: true,
-  executablePath: process.env.CHROMIUM_PATH || "/usr/bin/chromium",
+  ...(process.env.CHROMIUM_PATH
+    ? { executablePath: process.env.CHROMIUM_PATH }
+    : {}),
 });
 const context = await browser.newContext({
   viewport: { width: 390, height: 844 },
@@ -152,6 +154,27 @@ try {
     throw Error("Admin mobile horizontal overflow");
   await page.getByLabel("Unternehmen verwalten").selectOption(session.uid);
   await page.getByRole("heading", { name: /Guten/ }).waitFor();
+  const helpButton = page.getByRole("button", {
+    name: "Hilfe & Feedback",
+    exact: true,
+  });
+  await helpButton.click();
+  const helpDialog = page.getByRole("dialog", {
+    name: "Hilfe & Feedback",
+    exact: true,
+  });
+  await helpDialog.waitFor();
+  for (let n = 0; n < 12; n++) {
+    await page.keyboard.press(n % 3 === 0 ? "Shift+Tab" : "Tab");
+    if (
+      !(await helpDialog.evaluate((el) => el.contains(document.activeElement)))
+    )
+      throw Error("Keyboard focus escaped help dialog");
+  }
+  await page.keyboard.press("Escape");
+  await helpDialog.waitFor({ state: "hidden" });
+  if (!(await helpButton.evaluate((el) => el === document.activeElement)))
+    throw Error("Dialog did not restore keyboard focus");
   await page.goto(url + "/#settings");
   await page.getByRole("button", { name: "Team", exact: true }).click();
   const inviteEmail = `invited-${Date.now()}@test.invalid`;

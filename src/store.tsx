@@ -38,7 +38,7 @@ export function friendly(e: unknown) {
     return "Dieser Besuch wurde gleichzeitig geändert. Bitte erneut versuchen.";
   if (x.code === "PGRST116")
     return "Dieser Datensatz ist nicht verfügbar. Bitte erneut laden.";
-  if (x.code === "42501")
+  if (["42501", "HF_ACCESS_DENIED"].includes(x.code || ""))
     return x.message?.includes("E-Mail-Adresse bestätigen") ||
       x.message?.includes("Zwei-Faktor")
       ? x.message
@@ -228,7 +228,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       if (version === generation.current) {
         // Keep the current editor and its draft during a connection failure.
         // Permission revocation clears sensitive cached data immediately.
-        if ((e as { code?: string }).code === "42501") {
+        if (
+          ["42501", "HF_ACCESS_DENIED"].includes(
+            (e as { code?: string }).code || "",
+          )
+        ) {
           if ((e as { message?: string }).message?.includes("Zwei-Faktor")) {
             mfaBlocked.current = true;
             setMfaRequired(true);
@@ -249,12 +253,22 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
     supabase.auth.getSession().then(({ data, error }) => {
       if (error) setError(friendly(error));
-      setUser(data.session?.user || null);
+      setUser((previous) =>
+        previous?.id === data.session?.user?.id &&
+        previous?.email === data.session?.user?.email
+          ? previous
+          : data.session?.user || null,
+      );
       setLoading(false);
     });
     const { data: listener } = supabase.auth.onAuthStateChange(
       (_event, session) => {
-        setUser(session?.user || null);
+        setUser((previous) =>
+          previous?.id === session?.user?.id &&
+          previous?.email === session?.user?.email
+            ? previous
+            : session?.user || null,
+        );
       },
     );
     return () => listener.subscription.unsubscribe();

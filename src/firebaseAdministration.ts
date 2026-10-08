@@ -1,11 +1,12 @@
+import { pagedDocuments as getDocsFromServer } from "./firebaseQueries";
 import {
   collection,
   doc,
-  getDocsFromServer,
   getDocFromServer,
   query,
   where,
   runTransaction,
+  serverTimestamp,
   type Firestore,
 } from "firebase/firestore";
 import { sameFirebaseDocument } from "./firebaseData";
@@ -50,7 +51,7 @@ export async function changeFirebaseAdmin(
       actor_id: actor,
       action: "admin_access_changed",
       business_id: null,
-      created_at: new Date().toISOString(),
+      created_at: serverTimestamp(),
       details: { target_user_id: uid, is_active: active },
     });
   });
@@ -140,7 +141,7 @@ export async function changeFirebaseBusinessRole(
     if (
       transfer &&
       (records.docs.some(
-        (d) => d.data()._table === "treatments" && !d.data().end_time,
+        (d) => d.data()._table === "treatments" && d.data().end_ms == null,
       ) ||
         finance.docs.some((d) => d.data().completed === false))
     )
@@ -163,6 +164,7 @@ export async function changeFirebaseBusinessRole(
       id: uid,
       user_id: uid,
       business_id: business,
+      _audit_revision: revision.data()!.value + 1,
       role: role === "admin" ? "employee" : role,
       display_name:
         membership.data()?.display_name ||
@@ -236,10 +238,14 @@ export async function changeFirebaseBusinessRole(
     tx.set(audit, {
       actor_id: actor,
       action: "business_role_changed",
+      business_id: business,
       ...(companyOnly
         ? { id: audit.id, record_id: uid }
         : { business_id: business }),
-      created_at: now,
+      created_at: serverTimestamp(),
+      target_path: memberRef.path,
+      operation: "write",
+      revision: revision.data()!.value + 1,
       details: { target_user_id: uid, role, previous_owner: oldUid },
     });
   });

@@ -19,8 +19,8 @@ describe("Firebase data preservation and financial separation", () => {
       appointment_id: appointment.id,
       appointment_customer_id: member.id,
       customer_id: customer.id,
-      start_time: "2026-10-06T07:00:00Z",
-      end_time: "2026-10-06T07:32:00Z",
+      start_time: "2026-10-06T07:00:00.000Z",
+      end_time: "2026-10-06T07:32:00.000Z",
       duration_minutes: 32,
       total_price: 40,
       material_cost: 8.2,
@@ -62,7 +62,7 @@ describe("Firebase data preservation and financial separation", () => {
       billing_address_snapshot: "Testweg",
       delivery: "Post",
       recorded_by: "former-staff",
-      recorded_at: "2026-10-06T07:32:00Z",
+      recorded_at: "2026-10-06T07:32:00.000Z",
     });
     data.color_formulas.push({
       id: "color",

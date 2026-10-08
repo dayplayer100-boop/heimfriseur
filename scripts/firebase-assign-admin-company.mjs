@@ -1,8 +1,6 @@
+import { privateBackup } from "./lib/firebase-operator.mjs";
 // Operator-only: assign a platform admin to the existing director company, without company membership.
 import { execFileSync } from "node:child_process";
-import { mkdirSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
-import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 const args = process.argv.slice(2);
 const option = (key) =>
@@ -205,13 +203,13 @@ try {
       throw Error(
         "Zu viele Daten für das sichere Löschen. Keine Änderung vorgenommen.",
       );
-    const directory = join(homedir(), ".heimfriseur-backups");
-    mkdirSync(directory, { recursive: true, mode: 0o700 });
-    const file = join(directory, `company-${Date.now()}-${randomUUID()}.json`);
-    writeFileSync(
-      file,
-      JSON.stringify({ project, documents: saved }, null, 2),
-      { mode: 0o600 },
+    const file = privateBackup(
+      {
+        "--project": project,
+        "--backup-dir": option("--backup-dir") || undefined,
+      },
+      saved,
+      "company",
     );
     for (const entry of saved) remove(entry);
     console.log("Sicherung der zusätzlichen Firma gespeichert:", file);
@@ -264,7 +262,11 @@ try {
       const finance = await all(sourcePath + "/finance");
       if (
         records.some(
-          (d) => row(d)._table === "treatments" && !row(d).end_time,
+          (d) =>
+            row(d)._table === "treatments" &&
+            (row(d).end_ms === undefined
+              ? !row(d).end_time
+              : row(d).end_ms === null),
         ) ||
         finance.some((d) => row(d).completed === false)
       )
